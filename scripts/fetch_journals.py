@@ -55,6 +55,20 @@ FRONTIERS_RSS = {
 }
 
 
+def ensure_articles_table() -> bool:
+    """检查 Supabase 是否存在 public.articles，避免运行时直接崩溃。"""
+    try:
+        supabase.table("articles").select("id").limit(1).execute()
+        return True
+    except Exception as e:
+        msg = str(e)
+        if "PGRST205" in msg or "public.articles" in msg:
+            print("[ERR] Supabase 中不存在 public.articles 表。")
+            print("[ERR] 请在 Supabase SQL Editor 执行 scripts/init_db.sql 后重试。")
+            return False
+        raise
+
+
 def get_openalex_journal_id(journal_name: str) -> str | None:
     """通过期刊名查询OpenAlex的source ID"""
     params = {"search": journal_name, "filter": "type:journal"}
@@ -175,6 +189,9 @@ def save_articles(articles: list[dict]):
 
 
 def run():
+    if not ensure_articles_table():
+        return
+
     total = 0
 
     # 1. OpenAlex 国际期刊

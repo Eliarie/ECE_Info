@@ -18,6 +18,20 @@ client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 BATCH_SIZE = 20  # 每次处理20篇
 
 
+def ensure_articles_table() -> bool:
+    """检查 Supabase 是否存在 public.articles，避免运行时直接崩溃。"""
+    try:
+        supabase.table("articles").select("id").limit(1).execute()
+        return True
+    except Exception as e:
+        msg = str(e)
+        if "PGRST205" in msg or "public.articles" in msg:
+            print("[ERR] Supabase 中不存在 public.articles 表。")
+            print("[ERR] 请在 Supabase SQL Editor 执行 scripts/init_db.sql 后重试。")
+            return False
+        raise
+
+
 def translate(title: str, abstract: str | None) -> tuple[str, str | None]:
     """调用DeepSeek翻译标题和摘要"""
     content = f"标题：{title}"
@@ -52,6 +66,9 @@ def translate(title: str, abstract: str | None) -> tuple[str, str | None]:
 
 
 def run():
+    if not ensure_articles_table():
+        return
+
     # 查询未翻译的国际来源文章
     result = supabase.table("articles")\
         .select("id, title_original, abstract_original")\

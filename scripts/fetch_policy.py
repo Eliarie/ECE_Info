@@ -22,6 +22,20 @@ HEADERS = {
 DOMESTIC_KEYWORD = re.compile(r"学前|幼儿|幼儿园|早期教育|托育|托幼")
 
 
+def ensure_articles_table() -> bool:
+    """检查 Supabase 是否存在 public.articles，避免运行时直接崩溃。"""
+    try:
+        supabase.table("articles").select("id").limit(1).execute()
+        return True
+    except Exception as e:
+        msg = str(e)
+        if "PGRST205" in msg or "public.articles" in msg:
+            print("[ERR] Supabase 中不存在 public.articles 表。")
+            print("[ERR] 请在 Supabase SQL Editor 执行 scripts/init_db.sql 后重试。")
+            return False
+        raise
+
+
 def save_articles(articles: list[dict]):
     if not articles:
         return
@@ -205,6 +219,9 @@ def scrape_harvard():
 
 
 def run():
+    if not ensure_articles_table():
+        return
+
     print("=== 抓取 国内政策 ===")
 
     print("  教育部...")

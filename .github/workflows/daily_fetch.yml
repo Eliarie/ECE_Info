@@ -20,6 +20,31 @@ jobs:
       - name: 安装依赖
         run: pip install -r requirements.txt
 
+      - name: 预检查数据库表
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+          from supabase import create_client
+
+          url = os.environ["SUPABASE_URL"]
+          key = os.environ["SUPABASE_KEY"]
+          client = create_client(url, key)
+
+          try:
+              client.table("articles").select("id").limit(1).execute()
+              print("[OK] 数据库检查通过：public.articles 可访问")
+          except Exception as e:
+              msg = str(e)
+              print("[ERR] 数据库检查失败：public.articles 不可访问")
+              print("[ERR] 请在 Supabase SQL Editor 执行 scripts/init_db.sql")
+              print(f"[ERR] 原始错误: {msg}")
+              sys.exit(1)
+          PY
+
       - name: 抓取学术期刊
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
