@@ -1,5 +1,6 @@
 requests
 feedparser
 beautifulsoup4
-supabase
+supabase==2.15.0
+gotrue>=3.0.0,<4.0.0
 openai
