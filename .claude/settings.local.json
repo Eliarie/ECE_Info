@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(web-dev)",
+      "Skill(web-dev:*)",
+      "Bash(export SUPABASE_URL=https://dbcgapvkagvisqzamoyo.supabase.co)",
+      "Bash(export SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRiY2dhcHZrYWd2aXNxemFtb3lvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQwNjU3OTUsImV4cCI6MjA4OTY0MTc5NX0.C-_hQaU-uYCKXHTAjOHa8fqTkaBERVY2DxDh_SXCbKA)",
+      "Bash(export DEEPSEEK_API_KEY=sk-8444947753eb493a863784f055dd334e)",
+      "Bash(python scripts/retag.py)",
+      "Read(//c/Users/sa''''m''''mu/AppData/Local/Temp/claude/d--Freya-MOC-100-Projects-101-AI----11---------/9b3cd2b8-ea63-48ac-a4b0-f709efc612bc/tasks/**)",
+      "Bash(export OPENALEX_EMAIL=futa647@gmail.com)",
+      "Bash(python scripts/fetch_policy.py)",
+      "Bash(pip install:*)",
+      "Bash(python -c \":*)",
+      "Bash(python scripts/fetch_cnki.py)",
+      "Bash(python scripts/fetch_domestic_journals.py)"
+    ]
+  }
+}
