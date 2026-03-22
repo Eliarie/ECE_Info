@@ -10,6 +10,7 @@ import feedparser
 import requests
 from datetime import datetime, timedelta, timezone
 from supabase import create_client
+from topic_classifier import classify_topics
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
@@ -27,6 +28,9 @@ OPENALEX_JOURNALS = [
     {"name": "Journal of Research in Childhood Education",  "module": "research_frontier", "filter": None},
     {"name": "Early Education and Development",             "module": "research_frontier", "filter": None},
     {"name": "Young Children",                              "module": "research_practice", "filter": None},
+    {"name": "Childhood Education",                         "module": "research_practice", "filter": None},
+    {"name": "Journal of Early Childhood Teacher Education","module": "research_practice", "filter": None},
+    {"name": "European Early Childhood Education Research Journal", "module": "research_practice", "filter": None},
     {"name": "Journal of Children and Media",               "module": "research_frontier", "filter": None},
     # 教育技术期刊：只抓学前相关
     {"name": "Computers & Education",                       "module": "research_frontier", "filter": r"early childhood|preschool|kindergarten|young children"},
@@ -95,7 +99,7 @@ def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
         "filter": f"primary_location.source.id:{journal_id},from_publication_date:{since_date}",
         "sort": "publication_date:desc",
         "per-page": 50,
-        "select": "title,abstract_inverted_index,doi,publication_date,primary_location,authorships",
+        "select": "title,abstract_inverted_index,doi,publication_date,primary_location,authorships,cited_by_count",
     }
     if OPENALEX_EMAIL:
         params["mailto"] = OPENALEX_EMAIL
@@ -111,6 +115,7 @@ def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
         url = f"https://doi.org/{doi.replace('https://doi.org/', '')}" if doi else w.get("primary_location", {}).get("landing_page_url", "")
         pub_date = w.get("publication_date")
         authors = [a["author"]["display_name"] for a in w.get("authorships", []) if a.get("author")]
+        cited_by_count = w.get("cited_by_count", 0) or 0
 
         # 关键词过滤（教育技术类期刊）
         if journal["filter"] and not re.search(journal["filter"], title + (abstract or ""), re.IGNORECASE):
@@ -129,6 +134,8 @@ def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
             "module": journal["module"],
             "region": "international",
             "published_at": pub_date,
+            "cited_by_count": cited_by_count,
+            "topic_tags": classify_topics(title, abstract),
             "is_translated": False,
         })
 

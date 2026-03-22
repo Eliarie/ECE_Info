@@ -4,12 +4,17 @@
 """
 
 import os
+import sys
 import re
 import time
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timezone
 from supabase import create_client
+
+# 修复 Windows 控制台编码问题
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
@@ -19,8 +24,23 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
-DOMESTIC_KEYWORD = re.compile(r"学前|幼儿|幼儿园|早期教育|托育|托幼")
 
+def normalize_date(raw: str | None) -> str | None:
+    """将常见日期格式归一为 YYYY-MM-DD。"""
+    if not raw:
+        return None
+    text = raw.strip()
+    m = re.search(r"(20\d{2})[./年-](\d{1,2})[./月-](\d{1,2})", text)
+    if not m:
+        return None
+    y, mo, d = m.groups()
+    return f"{int(y):04d}-{int(mo):02d}-{int(d):02d}"
+
+
+def extract_date_from_text(raw: str | None) -> str | None:
+    if not raw:
+        return None
+    return normalize_date(raw)
 
 def ensure_articles_table() -> bool:
     """检查 Supabase 是否存在 public.articles，避免运行时直接崩溃。"""
@@ -60,13 +80,11 @@ def scrape_moe():
                 if not a:
                     continue
                 title = a.get_text(strip=True)
-                if not DOMESTIC_KEYWORD.search(title):
-                    continue
                 href = a.get("href", "")
                 if href.startswith("/"):
                     href = "https://www.moe.gov.cn" + href
                 span = li.find("span")
-                pub_date = span.get_text(strip=True) if span else None
+                pub_date = normalize_date(span.get_text(strip=True) if span else None)
                 articles.append({
                     "title_original": title, "title_zh": title,
                     "source_name": "教育部", "source_url": href,
@@ -87,18 +105,20 @@ def scrape_city(name: str, list_url: str, base_url: str):
         soup = BeautifulSoup(resp.text, "html.parser")
         for a in soup.select("a[href]"):
             title = a.get_text(strip=True)
-            if len(title) < 5 or not DOMESTIC_KEYWORD.search(title):
+            if len(title) < 5:
                 continue
             href = a.get("href", "")
             if href.startswith("/"):
                 href = base_url + href
             elif not href.startswith("http"):
                 continue
+            line_text = a.parent.get_text(" ", strip=True) if a.parent else title
+            pub_date = extract_date_from_text(line_text)
             articles.append({
                 "title_original": title, "title_zh": title,
                 "source_name": name, "source_url": href,
                 "module": "policy", "region": "domestic",
-                "published_at": None, "is_translated": True,
+                "published_at": pub_date, "is_translated": True,
             })
     except Exception as e:
         print(f"  [ERR] {name}: {e}")
@@ -116,10 +136,8 @@ def scrape_shanghai():
         data = resp.json()
         for item in data.get("data", {}).get("newsList", []):
             title = item.get("title", "")
-            if not DOMESTIC_KEYWORD.search(title):
-                continue
             url = "https://edu.sh.gov.cn" + item.get("url", "")
-            pub_date = item.get("publishDate")
+            pub_date = normalize_date(item.get("publishDate"))
             articles.append({
                 "title_original": title, "title_zh": title,
                 "source_name": "上海市教育局", "source_url": url,
@@ -142,7 +160,7 @@ def scrape_omep():
         for post in resp.json():
             title = post.get("title", {}).get("rendered", "")
             url = post.get("link", "")
-            pub_date = post.get("date")
+            pub_date = normalize_date(post.get("date"))
             excerpt = BeautifulSoup(post.get("excerpt", {}).get("rendered", ""), "html.parser").get_text()
             articles.append({
                 "title_original": title, "abstract_original": excerpt or None,
