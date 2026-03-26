@@ -14,6 +14,25 @@ const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAn
 
 const PAGE_SIZE = 8
 
+// 核心期刊优先排序：后续可按需要继续增删
+const CORE_JOURNAL_NAMES = new Set([
+  // 国内核心
+  '学前教育研究',
+  '电化教育研究',
+  '中国电化教育',
+  '教育研究',
+  '全球教育展望',
+  '开放教育研究',
+  // 国际高影响
+  'Early Childhood Research Quarterly',
+  'Child Development',
+  'Developmental Science',
+  'Computers & Education',
+  'British Journal of Educational Technology',
+  'Teaching and Teacher Education',
+  'Educational Researcher',
+])
+
 // 所有可能的主题标签（与 topic_classifier.py 保持一致）
 const ALL_TOPICS = [
   '数学与STEM',
@@ -72,8 +91,12 @@ export default function HomePage() {
           setLoading(false)
           return
         }
-        // 客户端排序：引用数降序，引用数相同则按发布时间降序
+        // 客户端排序：核心期刊优先 -> 引用数降序 -> 发布时间降序
         const sorted = (data ?? []).sort((a, b) => {
+          const aCore = CORE_JOURNAL_NAMES.has(a.source_name)
+          const bCore = CORE_JOURNAL_NAMES.has(b.source_name)
+          if (aCore !== bCore) return aCore ? -1 : 1
+
           const ca = (a as any).cited_by_count ?? 0
           const cb = (b as any).cited_by_count ?? 0
           if (cb !== ca) return cb - ca

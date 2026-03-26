@@ -13,7 +13,9 @@
       "Bash(pip install:*)",
       "Bash(python -c \":*)",
       "Bash(python scripts/fetch_cnki.py)",
-      "Bash(python scripts/fetch_domestic_journals.py)"
+      "Bash(python scripts/fetch_domestic_journals.py)",
+      "Bash(gh run:*)",
+      "Bash(python -:*)"
     ]
   }
 }

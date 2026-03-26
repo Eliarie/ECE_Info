@@ -24,6 +24,14 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
+# 统一学前相关关键词过滤（中英混合）
+EARLY_CHILDHOOD_PATTERN = re.compile(
+    r"学前|幼儿|托育|早教|幼教|儿童早期|婴幼儿|幼儿园|保教|"
+    r"early childhood|preschool|pre-school|kindergarten|"
+    r"nursery|daycare|child care|ecec|early years|infant|toddler",
+    re.IGNORECASE,
+)
+
 
 def normalize_date(raw: str | None) -> str | None:
     """将常见日期格式归一为 YYYY-MM-DD。"""
@@ -59,8 +67,22 @@ def ensure_articles_table() -> bool:
 def save_articles(articles: list[dict]):
     if not articles:
         return
-    supabase.table("articles").upsert(articles, on_conflict="source_url", ignore_duplicates=True).execute()
-    print(f"  [OK] 保存 {len(articles)} 条")
+    filtered = []
+    for a in articles:
+        text = " ".join([
+            a.get("title_original") or "",
+            a.get("title_zh") or "",
+            a.get("abstract_original") or "",
+        ])
+        if EARLY_CHILDHOOD_PATTERN.search(text):
+            filtered.append(a)
+
+    if not filtered:
+        print("  [OK] 保存 0 条（已过滤无关政策）")
+        return
+
+    supabase.table("articles").upsert(filtered, on_conflict="source_url", ignore_duplicates=True).execute()
+    print(f"  [OK] 保存 {len(filtered)} 条（原始 {len(articles)} 条）")
 
 
 def scrape_moe():

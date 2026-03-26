@@ -31,11 +31,16 @@ OPENALEX_JOURNALS = [
     {"name": "Childhood Education",                         "module": "research_practice", "filter": None},
     {"name": "Journal of Early Childhood Teacher Education","module": "research_practice", "filter": None},
     {"name": "European Early Childhood Education Research Journal", "module": "research_practice", "filter": None},
+    {"name": "Journal of Early Childhood Literacy",         "module": "research_frontier", "filter": None},
+    {"name": "Topics in Early Childhood Special Education", "module": "research_frontier", "filter": None},
+    {"name": "Australasian Journal of Early Childhood",     "module": "research_frontier", "filter": None},
     {"name": "Journal of Children and Media",               "module": "research_frontier", "filter": None},
     # 教育技术期刊：只抓学前相关
     {"name": "Computers & Education",                       "module": "research_frontier", "filter": r"early childhood|preschool|kindergarten|young children"},
     {"name": "British Journal of Educational Technology",   "module": "research_frontier", "filter": r"early childhood|preschool|kindergarten|young children"},
     {"name": "Journal of Computer Assisted Learning",       "module": "research_frontier", "filter": r"early childhood|preschool|kindergarten|young children"},
+    {"name": "Educational Researcher",                      "module": "research_frontier", "filter": r"early childhood|preschool|kindergarten|young children"},
+    {"name": "Teaching and Teacher Education",              "module": "research_frontier", "filter": r"early childhood|preschool|kindergarten|young children"},
 ]
 
 # 国内知网RSS（需要关键词过滤的单独标注）

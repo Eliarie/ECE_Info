@@ -57,6 +57,11 @@ INSERT INTO sources (name, url, type, module, region, config) VALUES
 ('Journal of Computer Assisted Learning', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Journal of Computer Assisted Learning", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
 ('Frontiers in Education', 'https://www.frontiersin.org/journals/education/rss', 'rss', 'research_frontier', 'international', '{"keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
 ('Journal of Children and Media', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Journal of Children and Media"}'),
+('Journal of Early Childhood Literacy', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Journal of Early Childhood Literacy"}'),
+('Topics in Early Childhood Special Education', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Topics in Early Childhood Special Education"}'),
+('Australasian Journal of Early Childhood', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Australasian Journal of Early Childhood"}'),
+('Educational Researcher', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Educational Researcher", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
+('Teaching and Teacher Education', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Teaching and Teacher Education", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
 
 -- 国内学术期刊（知网RSS）
 ('学前教育研究', 'https://www.cnki.net/kns/rss.aspx?journal=XQJY', 'rss', 'research_frontier', 'domestic', '{}'),
