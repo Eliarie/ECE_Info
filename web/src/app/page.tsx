@@ -146,6 +146,8 @@ export default function HomePage() {
     if (!bookmarks.has(id)) {
       setShowFavorites(true)
       setActiveTopic(null)
+      setSourceFilter('')
+      setSearch('')
       setPage(1)
     }
   }
@@ -173,9 +175,10 @@ export default function HomePage() {
 
   const filtered = useMemo(() => {
     let list = baseList
-    if (activeTopic) list = list.filter((a) => (a.topic_tags ?? []).includes(activeTopic))
-    if (sourceFilter) list = list.filter((a) => a.source_name === sourceFilter)
-    if (search.trim()) {
+    // 收藏模式下直接展示全部收藏，不按分类/来源/搜索筛选
+    if (!showFavorites && activeTopic) list = list.filter((a) => (a.topic_tags ?? []).includes(activeTopic))
+    if (!showFavorites && sourceFilter) list = list.filter((a) => a.source_name === sourceFilter)
+    if (!showFavorites && search.trim()) {
       const q = search.trim().toLowerCase()
       list = list.filter(
         (a) =>
@@ -186,7 +189,7 @@ export default function HomePage() {
       )
     }
     return list
-  }, [baseList, activeTopic, sourceFilter, search])
+  }, [baseList, activeTopic, sourceFilter, search, showFavorites])
 
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -214,7 +217,16 @@ export default function HomePage() {
                 {/* 收藏行 */}
                 <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
                   <button
-                    onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
+                    onClick={() => {
+                      const next = !showFavorites
+                      setShowFavorites(next)
+                      setActiveTopic(null)
+                      if (next) {
+                        setSourceFilter('')
+                        setSearch('')
+                      }
+                      setPage(1)
+                    }}
                     className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors ${
                       showFavorites ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-gray-100'
                     }`}
@@ -292,7 +304,16 @@ export default function HomePage() {
 
               <div className="hidden lg:block mt-6 border-t border-gray-200 pt-4">
                 <button
-                  onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
+                  onClick={() => {
+                    const next = !showFavorites
+                    setShowFavorites(next)
+                    setActiveTopic(null)
+                    if (next) {
+                      setSourceFilter('')
+                      setSearch('')
+                    }
+                    setPage(1)
+                  }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
                     showFavorites ? 'bg-amber-50 text-amber-700' : 'text-gray-600 hover:bg-gray-100'
                   }`}
@@ -328,7 +349,7 @@ export default function HomePage() {
               </div>
             )}
 
-            {!loading && articles.length > 0 && (
+            {!loading && articles.length > 0 && !showFavorites && (
               <div className="mt-4 flex gap-2">
                 <input
                   type="text"
@@ -341,7 +362,7 @@ export default function HomePage() {
                   <select
                     value={sourceFilter}
                     onChange={(e) => { setSourceFilter(e.target.value); setPage(1) }}
-                    className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-400"
+                    className="w-36 sm:w-48 max-w-[42vw] px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white truncate focus:outline-none focus:border-blue-400"
                   >
                     <option value="">全部来源</option>
                     {sources.map((s) => (
@@ -352,7 +373,7 @@ export default function HomePage() {
               </div>
             )}
 
-            {!loading && (search || sourceFilter || activeTopic) && (
+            {!loading && !showFavorites && (search || sourceFilter || activeTopic) && (
               <p className="mt-2 text-xs text-gray-400">
                 共 {filtered.length} 条
                 {activeTopic && <span> · {activeTopic}</span>}
