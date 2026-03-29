@@ -101,9 +101,9 @@ export default function HomePage() {
     setLoading(true)
     setSearch('')
     setSourceFilter('')
+    setSourceDropdownOpen(false)
     setPage(1)
     setActiveTopic(null)
-    setShowFavorites(false)
     supabase
       .from('articles')
       .select('*')
@@ -223,6 +223,9 @@ export default function HomePage() {
 
   const filtered = useMemo(() => {
     let list = baseList
+    if (showFavorites) {
+      list = list.filter((a) => a.module === module && a.region === region)
+    }
     // 收藏模式下直接展示全部收藏，不按分类/来源/搜索筛选
     if (!showFavorites && activeTopic) list = list.filter((a) => (a.topic_tags ?? []).includes(activeTopic))
     if (!showFavorites && sourceFilter) list = list.filter((a) => a.source_name === sourceFilter)
@@ -237,7 +240,7 @@ export default function HomePage() {
       )
     }
     return list
-  }, [baseList, activeTopic, sourceFilter, search, showFavorites])
+  }, [baseList, activeTopic, sourceFilter, search, showFavorites, module, region])
 
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -384,14 +387,12 @@ export default function HomePage() {
 
           {/* 主内容区 */}
           <div className="flex-1 min-w-0">
-            {!showFavorites && (
-              <TabBar
-                module={module}
-                region={region}
-                onModuleChange={(m) => { setModule(m); setPage(1) }}
-                onRegionChange={(r) => { setRegion(r); setPage(1) }}
-              />
-            )}
+            <TabBar
+              module={module}
+              region={region}
+              onModuleChange={(m) => { setModule(m); setPage(1) }}
+              onRegionChange={(r) => { setRegion(r); setPage(1) }}
+            />
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
