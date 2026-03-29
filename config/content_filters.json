@@ -1,0 +1,122 @@
+{
+  "global": {
+    "early_childhood_keywords": [
+      "学前",
+      "幼儿",
+      "托育",
+      "早教",
+      "幼教",
+      "儿童早期",
+      "婴幼儿",
+      "幼儿园",
+      "保教",
+      "early childhood",
+      "preschool",
+      "pre-school",
+      "kindergarten",
+      "nursery",
+      "daycare",
+      "child care",
+      "ecec",
+      "early years",
+      "infant",
+      "toddler"
+    ],
+    "ai_keywords": [
+      "AI",
+      "人工智能",
+      "智能化",
+      "大模型",
+      "生成式",
+      "AIGC",
+      "machine learning",
+      "deep learning",
+      "LLM",
+      "GPT"
+    ],
+    "education_keywords": [
+      "教育",
+      "教学",
+      "课堂",
+      "课程",
+      "学校",
+      "教师",
+      "学生",
+      "教研",
+      "育人",
+      "education",
+      "teaching",
+      "learning",
+      "curriculum",
+      "school",
+      "teacher",
+      "student"
+    ],
+    "policy_document_keywords": [
+      "政策",
+      "通知",
+      "通告",
+      "公告",
+      "意见",
+      "办法",
+      "方案",
+      "规划",
+      "指南",
+      "指引",
+      "解读",
+      "新闻",
+      "动态",
+      "简报",
+      "白皮书",
+      "报告",
+      "行动计划",
+      "实施方案",
+      "policy",
+      "guideline",
+      "guidance",
+      "framework",
+      "notice",
+      "announcement",
+      "news",
+      "press release",
+      "brief",
+      "white paper",
+      "report",
+      "action plan"
+    ]
+  },
+  "domestic": {
+    "early_childhood_keywords": [
+      "托班",
+      "托幼",
+      "保育"
+    ],
+    "ai_keywords": [
+      "智能教育",
+      "教育数字化"
+    ],
+    "education_keywords": [],
+    "policy_document_keywords": [
+      "工作动态",
+      "政策解读",
+      "通知公告",
+      "文件"
+    ]
+  },
+  "international": {
+    "early_childhood_keywords": [
+      "pre-k",
+      "prekindergarten"
+    ],
+    "ai_keywords": [
+      "artificial intelligence"
+    ],
+    "education_keywords": [],
+    "policy_document_keywords": [
+      "newsroom",
+      "news update",
+      "resource",
+      "toolkit"
+    ]
+  }
+}

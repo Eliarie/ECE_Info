@@ -6,6 +6,7 @@ import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
 import Pagination from '@/components/Pagination'
 import type { Article, Module, Region } from '@/lib/types'
+import coreJournals from '@/config/core-journals.json'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -14,24 +15,46 @@ const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAn
 
 const PAGE_SIZE = 8
 
-// 核心期刊优先排序：后续可按需要继续增删
-const CORE_JOURNAL_NAMES = new Set([
-  // 国内核心
-  '学前教育研究',
-  '电化教育研究',
-  '中国电化教育',
-  '教育研究',
-  '全球教育展望',
-  '开放教育研究',
-  // 国际高影响
-  'Early Childhood Research Quarterly',
-  'Child Development',
-  'Developmental Science',
-  'Computers & Education',
-  'British Journal of Educational Technology',
-  'Teaching and Teacher Education',
-  'Educational Researcher',
-])
+type CoreJournalConfig = {
+  global?: string[]
+  domestic?: string[]
+  international?: string[]
+}
+
+const normalizeJournalList = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return []
+  return value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+}
+
+const mergeJournalList = (base: string[], extra: string[]) => {
+  const seen = new Set<string>()
+  const merged: string[] = []
+  for (const item of [...base, ...extra]) {
+    const key = item.toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(item)
+  }
+  return merged
+}
+
+const buildCoreJournalSetByRegion = (): Record<Region, Set<string>> => {
+  // 兼容旧版数组配置
+  if (Array.isArray(coreJournals)) {
+    const all = new Set(normalizeJournalList(coreJournals))
+    return { domestic: all, international: all }
+  }
+
+  const cfg = coreJournals as CoreJournalConfig
+  const globalList = normalizeJournalList(cfg.global)
+  return {
+    domestic: new Set(mergeJournalList(globalList, normalizeJournalList(cfg.domestic))),
+    international: new Set(mergeJournalList(globalList, normalizeJournalList(cfg.international))),
+  }
+}
+
+// 核心期刊优先排序：名单由配置文件驱动（按国内/国际分开）
+const CORE_JOURNAL_NAMES_BY_REGION = buildCoreJournalSetByRegion()
 
 // 所有可能的主题标签（与 topic_classifier.py 保持一致）
 const ALL_TOPICS = [
@@ -93,8 +116,9 @@ export default function HomePage() {
         }
         // 客户端排序：核心期刊优先 -> 引用数降序 -> 发布时间降序
         const sorted = (data ?? []).sort((a, b) => {
-          const aCore = CORE_JOURNAL_NAMES.has(a.source_name)
-          const bCore = CORE_JOURNAL_NAMES.has(b.source_name)
+          const coreSet = CORE_JOURNAL_NAMES_BY_REGION[region]
+          const aCore = coreSet.has(a.source_name)
+          const bCore = coreSet.has(b.source_name)
           if (aCore !== bCore) return aCore ? -1 : 1
 
           const ca = (a as any).cited_by_count ?? 0

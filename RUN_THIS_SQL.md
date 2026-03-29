@@ -19,3 +19,17 @@ CREATE INDEX IF NOT EXISTS idx_articles_topic_tags ON articles USING GIN(topic_t
 ```
 
 运行完成后，刷新浏览器访问 http://localhost:3001 即可看到网站内容。
+
+---
+
+## 清理历史无关数据（policy + research_practice）
+
+如果你希望历史数据也符合最新规则（学前相关 OR AI+教育相关），请在 Supabase SQL Editor 运行：
+
+- 文件：`scripts/cleanup_irrelevant_policy_practice.sql`
+
+执行顺序建议：
+
+1. 先执行文件里的第 1 段（预览删除数量）
+2. 再执行第 2 段（抽样检查记录）
+3. 最后执行第 3 段（事务删除），确认后 `COMMIT`，否则 `ROLLBACK`

@@ -48,6 +48,22 @@ python scripts/backfill_2026.py
 
 打开 http://localhost:3001 查看效果
 
+### 5. 配置化调整（无需改代码）
+
+你可以直接编辑以下文件来调整规则：
+
+- `web/src/config/core-journals.json`
+	- 控制“核心期刊优先”排序名单
+	- 支持 `global` / `domestic` / `international` 分区配置
+	- 修改后重启前端即可生效
+
+- `config/content_filters.json`
+	- 控制抓取过滤关键词（学前 / AI / 教育 / 政策文档类型）
+	- 支持 `global` / `domestic` / `international` 分区关键词
+	- 修改后重跑 `python scripts/fetch_policy.py` 即可生效
+
+抓取脚本会在运行结束后输出汇总统计：原始抓取、过滤剔除、最终入库、保留率。
+
 ## 新功能说明
 
 - **主题分类**：左侧边栏按主题分类显示文章
