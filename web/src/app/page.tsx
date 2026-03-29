@@ -136,11 +136,18 @@ export default function HomePage() {
   const toggleBookmark = (id: string) => {
     setBookmarks((prev) => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
+      const wasBookmarked = next.has(id)
+      if (wasBookmarked) next.delete(id)
       else next.add(id)
       try { localStorage.setItem('bookmarks', JSON.stringify(Array.from(next))) } catch {}
       return next
     })
+    // 收藏时直接跳到收藏视图
+    if (!bookmarks.has(id)) {
+      setShowFavorites(true)
+      setActiveTopic(null)
+      setPage(1)
+    }
   }
 
   // 侧边栏：统计每个主题在当前列表中的文章数
