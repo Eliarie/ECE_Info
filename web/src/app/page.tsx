@@ -197,17 +197,17 @@ export default function HomePage() {
           <p className="text-sm text-gray-500 mt-1">每日自动抓取国内外学术期刊、政策文件与研究动态</p>
         </header>
 
-        <div className="flex flex-col md:flex-row gap-6 md:gap-10">
-          {/* 主题目录：手机横向滚动，桌面左侧竖排 */}
-          <aside className="md:w-36 md:flex-shrink-0">
-            <div className="md:sticky md:top-8">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 hidden md:block">主题分类</p>
-              {/* 手机：带阴影的横向滚动条；桌面：竖排 */}
-              <div className="md:hidden -mx-4 px-4 bg-white shadow-sm border-b border-gray-100">
-                <nav className="flex flex-row gap-2 overflow-x-auto py-2 scrollbar-hide">
+        <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
+          {/* 主题目录：手机/平板横向滚动，大屏左侧竖排 */}
+          <aside className="lg:w-36 lg:flex-shrink-0">
+            <div className="lg:sticky lg:top-8">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 hidden lg:block">主题分类</p>
+              {/* 手机/平板：带阴影的横向滚动条 */}
+              <div className="lg:hidden -mx-4 px-4 bg-white shadow-sm border-b border-gray-100">
+                <nav className="flex flex-row gap-1.5 overflow-x-auto py-2 scrollbar-hide">
                   <button
                     onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
+                    className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors whitespace-nowrap ${
                       activeTopic === null && !showFavorites
                         ? 'bg-gray-900 text-white'
                         : 'bg-gray-100 text-gray-700'
@@ -215,31 +215,34 @@ export default function HomePage() {
                   >
                     全部 {articles.length}
                   </button>
+                  <button
+                    onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
+                    className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors whitespace-nowrap flex items-center gap-1 ${
+                      showFavorites ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                    </svg>
+                    收藏{bookmarks.size > 0 ? ` ${bookmarks.size}` : ''}
+                  </button>
                   {[
                     ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count > 0).sort((a, b) => b.count - a.count),
                   ].map(({ t, count }) => (
                     <button
                       key={t}
                       onClick={() => handleTopicClick(t)}
-                      className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
+                      className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors whitespace-nowrap ${
                         activeTopic === t ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
                       }`}
                     >
                       {t} {count}
                     </button>
                   ))}
-                  <button
-                    onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
-                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
-                      showFavorites ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    收藏{bookmarks.size > 0 ? ` ${bookmarks.size}` : ''}
-                  </button>
                 </nav>
               </div>
-              {/* 桌面竖排 */}
-              <nav className="hidden md:flex md:flex-col md:space-y-0.5">
+              {/* 大屏竖排 */}
+              <nav className="hidden lg:flex lg:flex-col lg:space-y-0.5">
                 <button
                   onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center justify-between ${
@@ -275,7 +278,7 @@ export default function HomePage() {
                 })}
               </nav>
 
-              <div className="hidden md:block mt-6 border-t border-gray-200 pt-4">
+              <div className="hidden lg:block mt-6 border-t border-gray-200 pt-4">
                 <button
                   onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
