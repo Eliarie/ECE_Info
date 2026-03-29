@@ -202,8 +202,44 @@ export default function HomePage() {
           <aside className="md:w-36 md:flex-shrink-0">
             <div className="md:sticky md:top-8">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 hidden md:block">主题分类</p>
-              <nav className="flex flex-row gap-2 overflow-x-auto pb-2 md:flex-col md:space-y-0.5 md:overflow-x-visible md:pb-0">
-                {/* 全部 */}
+              {/* 手机：带阴影的横向滚动条；桌面：竖排 */}
+              <div className="md:hidden -mx-4 px-4 bg-white shadow-sm border-b border-gray-100">
+                <nav className="flex flex-row gap-2 overflow-x-auto py-2 scrollbar-hide">
+                  <button
+                    onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
+                      activeTopic === null && !showFavorites
+                        ? 'bg-gray-900 text-white'
+                        : 'bg-gray-100 text-gray-700'
+                    }`}
+                  >
+                    全部 {articles.length}
+                  </button>
+                  {[
+                    ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count > 0).sort((a, b) => b.count - a.count),
+                  ].map(({ t, count }) => (
+                    <button
+                      key={t}
+                      onClick={() => handleTopicClick(t)}
+                      className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
+                        activeTopic === t ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
+                      }`}
+                    >
+                      {t} {count}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
+                    className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm transition-colors whitespace-nowrap ${
+                      showFavorites ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    收藏{bookmarks.size > 0 ? ` ${bookmarks.size}` : ''}
+                  </button>
+                </nav>
+              </div>
+              {/* 桌面竖排 */}
+              <nav className="hidden md:flex md:flex-col md:space-y-0.5">
                 <button
                   onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center justify-between ${
@@ -217,8 +253,6 @@ export default function HomePage() {
                     {articles.length}
                   </span>
                 </button>
-
-                {/* 所有主题，有数据的按数量降序排前面，无数据的排后面 */}
                 {[
                   ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count > 0).sort((a, b) => b.count - a.count),
                   ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count === 0),
@@ -229,9 +263,7 @@ export default function HomePage() {
                       key={t}
                       onClick={() => handleTopicClick(t)}
                       className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center justify-between ${
-                        isActive
-                          ? 'bg-gray-900 text-white'
-                          : 'text-gray-600 hover:bg-gray-100'
+                        isActive ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
                       <span className="truncate">{t}</span>
@@ -243,7 +275,7 @@ export default function HomePage() {
                 })}
               </nav>
 
-              <div className="mt-0 md:mt-6 md:border-t md:border-gray-200 md:pt-4 flex-shrink-0">
+              <div className="hidden md:block mt-6 border-t border-gray-200 pt-4">
                 <button
                   onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
