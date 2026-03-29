@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
@@ -84,6 +84,10 @@ export default function HomePage() {
   const [page, setPage] = useState(1)
   const [activeTopic, setActiveTopic] = useState<string | null>(null)
   const [showFavorites, setShowFavorites] = useState(false)
+  const [favoriteArticles, setFavoriteArticles] = useState<Article[]>([])
+  const [favoritesLoading, setFavoritesLoading] = useState(false)
+  const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false)
+  const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
     try {
@@ -133,6 +137,49 @@ export default function HomePage() {
       })
   }, [module, region])
 
+  useEffect(() => {
+    if (!showFavorites) return
+    if (!supabase || bookmarks.size === 0) {
+      setFavoriteArticles([])
+      setFavoritesLoading(false)
+      return
+    }
+
+    setFavoritesLoading(true)
+    supabase
+      .from('articles')
+      .select('*')
+      .in('id', Array.from(bookmarks))
+      .order('published_at', { ascending: false, nullsFirst: false })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error('Supabase favorites query error:', error)
+          setFavoriteArticles([])
+          setFavoritesLoading(false)
+          return
+        }
+        setFavoriteArticles(data ?? [])
+        setFavoritesLoading(false)
+      })
+  }, [showFavorites, bookmarks])
+
+  useEffect(() => {
+    const onClickOutside = (event: MouseEvent) => {
+      if (!sourceDropdownRef.current) return
+      if (!sourceDropdownRef.current.contains(event.target as Node)) {
+        setSourceDropdownOpen(false)
+      }
+    }
+
+    if (sourceDropdownOpen) {
+      document.addEventListener('mousedown', onClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside)
+    }
+  }, [sourceDropdownOpen])
+
   const toggleBookmark = (id: string) => {
     setBookmarks((prev) => {
       const next = new Set(prev)
@@ -148,6 +195,7 @@ export default function HomePage() {
       setActiveTopic(null)
       setSourceFilter('')
       setSearch('')
+      setSourceDropdownOpen(false)
       setPage(1)
     }
   }
@@ -169,9 +217,9 @@ export default function HomePage() {
   }, [articles])
 
   const baseList = useMemo(() => {
-    if (showFavorites) return articles.filter((a) => bookmarks.has(a.id))
+    if (showFavorites) return favoriteArticles.filter((a) => bookmarks.has(a.id))
     return articles
-  }, [showFavorites, articles, bookmarks])
+  }, [showFavorites, articles, bookmarks, favoriteArticles])
 
   const filtered = useMemo(() => {
     let list = baseList
@@ -239,6 +287,7 @@ export default function HomePage() {
                   {bookmarks.size === 0 && <span className="text-xs text-gray-400">点击文章右上角书签收藏</span>}
                 </div>
                 {/* 主题标签行 */}
+                {!showFavorites && (
                 <nav className="flex flex-row gap-1.5 overflow-x-auto py-2 scrollbar-hide">
                   <button
                     onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
@@ -264,8 +313,10 @@ export default function HomePage() {
                     </button>
                   ))}
                 </nav>
+                )}
               </div>
               {/* 大屏竖排 */}
+              {!showFavorites && (
               <nav className="hidden lg:flex lg:flex-col lg:space-y-0.5">
                 <button
                   onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
@@ -301,6 +352,7 @@ export default function HomePage() {
                   )
                 })}
               </nav>
+              )}
 
               <div className="hidden lg:block mt-6 border-t border-gray-200 pt-4">
                 <button
@@ -332,12 +384,14 @@ export default function HomePage() {
 
           {/* 主内容区 */}
           <div className="flex-1 min-w-0">
-            <TabBar
-              module={module}
-              region={region}
-              onModuleChange={(m) => { setModule(m); setPage(1) }}
-              onRegionChange={(r) => { setRegion(r); setPage(1) }}
-            />
+            {!showFavorites && (
+              <TabBar
+                module={module}
+                region={region}
+                onModuleChange={(m) => { setModule(m); setPage(1) }}
+                onRegionChange={(r) => { setRegion(r); setPage(1) }}
+              />
+            )}
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -359,16 +413,37 @@ export default function HomePage() {
                   className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-400"
                 />
                 {sources.length > 1 && (
-                  <select
-                    value={sourceFilter}
-                    onChange={(e) => { setSourceFilter(e.target.value); setPage(1) }}
-                    className="w-36 sm:w-48 max-w-[42vw] px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white truncate focus:outline-none focus:border-blue-400"
-                  >
-                    <option value="">全部来源</option>
-                    {sources.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
-                  </select>
+                  <div ref={sourceDropdownRef} className="relative w-36 sm:w-48 max-w-[42vw]">
+                    <button
+                      type="button"
+                      onClick={() => setSourceDropdownOpen((v) => !v)}
+                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-left truncate focus:outline-none focus:border-blue-400"
+                    >
+                      {sourceFilter || '全部来源'}
+                    </button>
+                    {sourceDropdownOpen && (
+                      <div className="absolute z-20 mt-1 right-0 w-64 max-w-[82vw] rounded-lg border border-gray-200 bg-white shadow-lg max-h-56 overflow-y-auto">
+                        <button
+                          type="button"
+                          onClick={() => { setSourceFilter(''); setSourceDropdownOpen(false); setPage(1) }}
+                          className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${sourceFilter === '' ? 'text-blue-600' : 'text-gray-700'}`}
+                        >
+                          全部来源
+                        </button>
+                        {sources.map((s) => (
+                          <button
+                            key={s}
+                            type="button"
+                            onClick={() => { setSourceFilter(s); setSourceDropdownOpen(false); setPage(1) }}
+                            className={`block w-full text-left px-3 py-2 text-sm truncate hover:bg-gray-50 ${sourceFilter === s ? 'text-blue-600' : 'text-gray-700'}`}
+                            title={s}
+                          >
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -385,6 +460,8 @@ export default function HomePage() {
             <div className="mt-4 space-y-3">
               {loading ? (
                 <div className="text-center py-16 text-gray-400 text-sm">加载中…</div>
+              ) : showFavorites && favoritesLoading ? (
+                <div className="text-center py-16 text-gray-400 text-sm">加载收藏中…</div>
               ) : paginated.length === 0 ? (
                 <div className="text-center py-16 text-gray-400 text-sm">
                   {showFavorites
