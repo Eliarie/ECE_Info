@@ -197,12 +197,12 @@ export default function HomePage() {
           <p className="text-sm text-gray-500 mt-1">每日自动抓取国内外学术期刊、政策文件与研究动态</p>
         </header>
 
-        <div className="flex gap-10">
-          {/* 左侧主题目录 */}
-          <aside className="w-36 flex-shrink-0">
-            <div className="sticky top-8">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">主题分类</p>
-              <nav className="space-y-0.5">
+        <div className="flex flex-col md:flex-row gap-6 md:gap-10">
+          {/* 主题目录：手机横向滚动，桌面左侧竖排 */}
+          <aside className="md:w-36 md:flex-shrink-0">
+            <div className="md:sticky md:top-8">
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 hidden md:block">主题分类</p>
+              <nav className="flex flex-row gap-2 overflow-x-auto pb-2 md:flex-col md:space-y-0.5 md:overflow-x-visible md:pb-0">
                 {/* 全部 */}
                 <button
                   onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
@@ -243,7 +243,7 @@ export default function HomePage() {
                 })}
               </nav>
 
-              <div className="mt-6 border-t border-gray-200 pt-4">
+              <div className="mt-0 md:mt-6 md:border-t md:border-gray-200 md:pt-4 flex-shrink-0">
                 <button
                   onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
