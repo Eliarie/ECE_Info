@@ -189,15 +189,6 @@ export default function HomePage() {
       try { localStorage.setItem('bookmarks', JSON.stringify(Array.from(next))) } catch {}
       return next
     })
-    // 收藏时直接跳到收藏视图
-    if (!bookmarks.has(id)) {
-      setShowFavorites(true)
-      setActiveTopic(null)
-      setSourceFilter('')
-      setSearch('')
-      setSourceDropdownOpen(false)
-      setPage(1)
-    }
   }
 
   // 侧边栏：统计每个主题在当前列表中的文章数
@@ -281,21 +272,32 @@ export default function HomePage() {
               <div className="lg:hidden -mx-4 px-4 bg-white shadow-sm border-b border-gray-100">
                 {/* 收藏行 */}
                 <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
-                  <button
-                    onClick={() => {
-                      if (showFavorites) exitFavorites()
-                      else enterFavorites()
-                    }}
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors ${
-                      showFavorites ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-gray-100'
-                    }`}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                    </svg>
-                    我的收藏{bookmarks.size > 0 ? `（${bookmarks.size}）` : ''}
-                  </button>
-                  {bookmarks.size === 0 && <span className="text-xs text-gray-400">点击文章右上角书签收藏</span>}
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        if (showFavorites) exitFavorites()
+                        else enterFavorites()
+                      }}
+                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors ${
+                        showFavorites ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-gray-100'
+                      }`}
+                    >
+                      <svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                      </svg>
+                      我的收藏{bookmarks.size > 0 ? `（${bookmarks.size}）` : ''}
+                    </button>
+                    {showFavorites && (
+                      <button
+                        type="button"
+                        onClick={exitFavorites}
+                        className="px-2 py-1 rounded-full text-xs text-gray-600 hover:bg-gray-100"
+                      >
+                        ← 返回
+                      </button>
+                    )}
+                  </div>
+                  {bookmarks.size === 0 && !showFavorites && <span className="text-xs text-gray-400">点击文章右上角书签收藏</span>}
                 </div>
                 {/* 主题标签行 */}
                 {!showFavorites && (
@@ -366,23 +368,34 @@ export default function HomePage() {
               )}
 
               <div className="hidden lg:block mt-6 border-t border-gray-200 pt-4">
-                <button
-                  onClick={() => {
-                    if (showFavorites) exitFavorites()
-                    else enterFavorites()
-                  }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                    showFavorites ? 'bg-amber-50 text-amber-700' : 'text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                  </svg>
-                  <span>收藏</span>
-                  {bookmarks.size > 0 && (
-                    <span className="ml-auto text-xs text-gray-400">{bookmarks.size}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      if (showFavorites) exitFavorites()
+                      else enterFavorites()
+                    }}
+                    className={`flex-1 text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
+                      showFavorites ? 'bg-amber-50 text-amber-700' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                    </svg>
+                    <span>收藏</span>
+                    {bookmarks.size > 0 && (
+                      <span className="ml-auto text-xs text-gray-400">{bookmarks.size}</span>
+                    )}
+                  </button>
+                  {showFavorites && (
+                    <button
+                      type="button"
+                      onClick={exitFavorites}
+                      className="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100"
+                    >
+                      ← 返回
+                    </button>
                   )}
-                </button>
+                </div>
               </div>
             </div>
           </aside>
@@ -395,19 +408,6 @@ export default function HomePage() {
               onModuleChange={(m) => { setModule(m); setPage(1) }}
               onRegionChange={(r) => { setRegion(r); setPage(1) }}
             />
-
-            {showFavorites && (
-              <div className="mt-4 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
-                <p className="text-sm text-amber-800">当前正在查看我的收藏</p>
-                <button
-                  type="button"
-                  onClick={exitFavorites}
-                  className="text-sm font-medium text-amber-700 hover:text-amber-900"
-                >
-                  返回全部内容
-                </button>
-              </div>
-            )}
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
