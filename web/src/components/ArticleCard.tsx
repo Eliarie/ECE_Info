@@ -50,7 +50,7 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark }: P
         {article.authors?.length > 0 && (
           <><span>·</span><span>{article.authors.slice(0, 2).join(', ')}{article.authors.length > 2 ? ' 等' : ''}</span></>
         )}
-        {article.cited_by_count > 0 && (
+        {(article.cited_by_count ?? 0) > 0 && (
           <><span>·</span><span className="text-amber-500 font-medium">引用 {article.cited_by_count}</span></>
         )}
       </div>
