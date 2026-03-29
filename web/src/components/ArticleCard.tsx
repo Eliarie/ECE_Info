@@ -23,7 +23,7 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark }: P
     onToggleBookmark(article.id)
     const msg = bookmarked ? '已取消收藏' : '已收藏，可在「我的收藏」查看'
     setToast(msg)
-    setTimeout(() => setToast(null), 2500)
+    setTimeout(() => setToast(null), 1200)
   }
 
   return (
