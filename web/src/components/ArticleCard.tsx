@@ -11,6 +11,7 @@ interface Props {
 
 export default function ArticleCard({ article, bookmarked, onToggleBookmark }: Props) {
   const [expanded, setExpanded] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
 
   const title = article.title_zh || article.title_original
   const abstract = article.abstract_zh || article.abstract_original
@@ -18,8 +19,20 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark }: P
     ? new Date(article.published_at).toLocaleDateString('zh-CN')
     : null
 
+  const handleBookmark = () => {
+    onToggleBookmark(article.id)
+    const msg = bookmarked ? '已取消收藏' : '已收藏，可在「我的收藏」查看'
+    setToast(msg)
+    setTimeout(() => setToast(null), 2500)
+  }
+
   return (
-    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
+    <div className="relative border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors">
+      {toast && (
+        <div className="absolute top-2 right-2 bg-gray-800 text-white text-xs px-3 py-1.5 rounded-lg shadow-lg z-10 animate-fade-in">
+          {toast}
+        </div>
+      )}
       <div className="flex items-start gap-2">
         <a href={article.source_url} target="_blank" rel="noopener noreferrer" className="group flex-1 min-w-0">
           <h3 className="text-base font-medium text-gray-900 group-hover:text-blue-600 leading-snug">
@@ -30,7 +43,7 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark }: P
           )}
         </a>
         <button
-          onClick={() => onToggleBookmark(article.id)}
+          onClick={handleBookmark}
           title={bookmarked ? '取消收藏' : '收藏'}
           className={`flex-shrink-0 mt-0.5 p-1 rounded transition-colors ${
             bookmarked

@@ -202,8 +202,24 @@ export default function HomePage() {
           <aside className="lg:w-36 lg:flex-shrink-0">
             <div className="lg:sticky lg:top-8">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 hidden lg:block">主题分类</p>
-              {/* 手机/平板：带阴影的横向滚动条 */}
+              {/* 手机/平板：带阴影的横向滚动条 + 收藏单独一行 */}
               <div className="lg:hidden -mx-4 px-4 bg-white shadow-sm border-b border-gray-100">
+                {/* 收藏行 */}
+                <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
+                  <button
+                    onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors ${
+                      showFavorites ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                    </svg>
+                    我的收藏{bookmarks.size > 0 ? `（${bookmarks.size}）` : ''}
+                  </button>
+                  {bookmarks.size === 0 && <span className="text-xs text-gray-400">点击文章右上角书签收藏</span>}
+                </div>
+                {/* 主题标签行 */}
                 <nav className="flex flex-row gap-1.5 overflow-x-auto py-2 scrollbar-hide">
                   <button
                     onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
@@ -214,17 +230,6 @@ export default function HomePage() {
                     }`}
                   >
                     全部 {articles.length}
-                  </button>
-                  <button
-                    onClick={() => { setShowFavorites((v) => !v); setActiveTopic(null); setPage(1) }}
-                    className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors whitespace-nowrap flex items-center gap-1 ${
-                      showFavorites ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-600'
-                    }`}
-                  >
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                    </svg>
-                    收藏{bookmarks.size > 0 ? ` ${bookmarks.size}` : ''}
                   </button>
                   {[
                     ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count > 0).sort((a, b) => b.count - a.count),
