@@ -68,7 +68,7 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark }: P
         )}
       </div>
 
-      {abstract && (
+      {abstract ? (
         <div className="mt-2">
           <p className={`text-sm text-gray-600 leading-relaxed ${expanded ? '' : 'line-clamp-3'}`}>
             {abstract}
@@ -82,6 +82,8 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark }: P
             </button>
           )}
         </div>
+      ) : (
+        <p className="mt-2 text-xs text-gray-400 italic">摘要未开放，请前往原文查看</p>
       )}
     </div>
   )
