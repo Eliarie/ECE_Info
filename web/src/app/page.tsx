@@ -78,6 +78,7 @@ export default function HomePage() {
   const [module, setModule] = useState<Module>('research_frontier')
   const [region, setRegion] = useState<Region>('international')
   const [articles, setArticles] = useState<Article[]>([])
+  const [configuredSources, setConfiguredSources] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [sourceFilter, setSourceFilter] = useState('')
@@ -104,37 +105,54 @@ export default function HomePage() {
     setSourceDropdownOpen(false)
     setPage(1)
     setActiveTopic(null)
-    supabase
+    const articlesRequest = supabase
       .from('articles')
       .select('*')
       .eq('module', module)
       .eq('region', region)
       .order('published_at', { ascending: false, nullsFirst: false })
       .limit(500)
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('Supabase query error:', error)
-          setArticles([])
-          setLoading(false)
-          return
-        }
-        // 客户端排序：核心期刊优先 -> 引用数降序 -> 发布时间降序
-        const sorted = (data ?? []).sort((a, b) => {
-          const coreSet = CORE_JOURNAL_NAMES_BY_REGION[region]
-          const aCore = coreSet.has(a.source_name)
-          const bCore = coreSet.has(b.source_name)
-          if (aCore !== bCore) return aCore ? -1 : 1
 
-          const ca = (a as any).cited_by_count ?? 0
-          const cb = (b as any).cited_by_count ?? 0
-          if (cb !== ca) return cb - ca
-          const ta = a.published_at ? new Date(a.published_at).getTime() : 0
-          const tb = b.published_at ? new Date(b.published_at).getTime() : 0
-          return tb - ta
-        })
-        setArticles(sorted)
+    const sourcesRequest = supabase
+      .from('sources')
+      .select('name')
+      .eq('module', module)
+      .eq('region', region)
+      .eq('is_active', true)
+      .order('name')
+
+    Promise.all([articlesRequest, sourcesRequest]).then(([articleResult, sourceResult]) => {
+      const { data, error } = articleResult
+      if (error) {
+        console.error('Supabase query error:', error)
+        setArticles([])
+        setConfiguredSources([])
         setLoading(false)
+        return
+      }
+      if (sourceResult.error) {
+        console.error('Supabase sources query error:', sourceResult.error)
+        setConfiguredSources([])
+      } else {
+        setConfiguredSources((sourceResult.data ?? []).map((source) => source.name).filter(Boolean))
+      }
+      // 客户端排序：核心期刊优先 -> 引用数降序 -> 发布时间降序
+      const sorted = (data ?? []).sort((a, b) => {
+        const coreSet = CORE_JOURNAL_NAMES_BY_REGION[region]
+        const aCore = coreSet.has(a.source_name)
+        const bCore = coreSet.has(b.source_name)
+        if (aCore !== bCore) return aCore ? -1 : 1
+
+        const ca = (a as any).cited_by_count ?? 0
+        const cb = (b as any).cited_by_count ?? 0
+        if (cb !== ca) return cb - ca
+        const ta = a.published_at ? new Date(a.published_at).getTime() : 0
+        const tb = b.published_at ? new Date(b.published_at).getTime() : 0
+        return tb - ta
       })
+      setArticles(sorted)
+      setLoading(false)
+    })
   }, [module, region])
 
   useEffect(() => {
@@ -203,8 +221,19 @@ export default function HomePage() {
   }, [articles])
 
   const sources = useMemo(() => {
-    const set = new Set(articles.map((a) => a.source_name).filter(Boolean))
+    const set = new Set([
+      ...configuredSources,
+      ...articles.map((a) => a.source_name).filter(Boolean),
+    ])
     return Array.from(set).sort()
+  }, [articles, configuredSources])
+
+  const sourceCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const article of articles) {
+      counts.set(article.source_name, (counts.get(article.source_name) ?? 0) + 1)
+    }
+    return counts
   }, [articles])
 
   const baseList = useMemo(() => {
@@ -446,17 +475,23 @@ export default function HomePage() {
                         >
                           全部来源
                         </button>
-                        {sources.map((s) => (
-                          <button
-                            key={s}
-                            type="button"
-                            onClick={() => { setSourceFilter(s); setSourceDropdownOpen(false); setPage(1) }}
-                            className={`block w-full text-left px-3 py-2 text-sm truncate hover:bg-gray-50 ${sourceFilter === s ? 'text-blue-600' : 'text-gray-700'}`}
-                            title={s}
-                          >
-                            {s}
-                          </button>
-                        ))}
+                        {sources.map((s) => {
+                          const count = sourceCounts.get(s) ?? 0
+                          return (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => { setSourceFilter(s); setSourceDropdownOpen(false); setPage(1) }}
+                              className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === s ? 'text-blue-600' : 'text-gray-700'}`}
+                              title={s}
+                            >
+                              <span className="min-w-0 flex-1 truncate">{s}</span>
+                              <span className="flex-shrink-0 text-xs text-gray-400">
+                                {count > 0 ? count : '暂无'}
+                              </span>
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -482,6 +517,8 @@ export default function HomePage() {
                 <div className="text-center py-16 text-gray-400 text-sm">
                   {showFavorites
                     ? '还没有收藏，点击文章右上角的书签图标收藏。'
+                    : sourceFilter
+                    ? `「${sourceFilter}」暂无可用文章。`
                     : activeTopic
                     ? `「${activeTopic}」暂无相关文章。`
                     : articles.length === 0
