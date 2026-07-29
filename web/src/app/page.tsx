@@ -69,18 +69,16 @@ const getBookmarkDeviceId = () => {
 
 // 所有可能的主题标签（与 topic_classifier.py 保持一致）
 const ALL_TOPICS = [
-  '语言与读写',
-  '数学与科学',
-  '社会情感与心理',
-  '认知与学习',
-  '身体健康与运动',
-  '艺术与创造',
-  '游戏课程与环境',
-  '教师专业与教学',
-  '家庭社区与家园共育',
-  '特殊教育与融合',
-  '数字技术与AI',
-  '政策质量与治理',
+  '数字教育',
+  '儿童发展',
+  '教学与学习',
+  '教师教育',
+  '课程',
+  '游戏',
+  '家庭与社区',
+  '特殊教育',
+  '教育政策',
+  '研究方法与理论',
 ]
 
 export default function HomePage() {
@@ -346,7 +344,7 @@ export default function HomePage() {
 
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
           {/* 主题目录：手机/平板横向滚动，大屏左侧竖排 */}
-          <aside className="lg:w-36 lg:flex-shrink-0">
+          <aside className="lg:w-44 lg:flex-shrink-0">
             <div className="lg:sticky lg:top-8">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 hidden lg:block">主题分类</p>
               {/* 手机/平板：带阴影的横向滚动条 + 收藏单独一行 */}
@@ -393,9 +391,7 @@ export default function HomePage() {
                   >
                     全部 {articles.length}
                   </button>
-                  {[
-                    ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count > 0).sort((a, b) => b.count - a.count),
-                  ].map(({ t, count }) => (
+                  {ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).map(({ t, count }) => (
                     <button
                       key={t}
                       onClick={() => handleTopicClick(t)}
@@ -425,10 +421,7 @@ export default function HomePage() {
                     {articles.length}
                   </span>
                 </button>
-                {[
-                  ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count > 0).sort((a, b) => b.count - a.count),
-                  ...ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).filter(({ count }) => count === 0),
-                ].map(({ t, count }) => {
+                {ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).map(({ t, count }) => {
                   const isActive = activeTopic === t
                   return (
                     <button
@@ -438,7 +431,7 @@ export default function HomePage() {
                         isActive ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
-                      <span className="truncate">{t}</span>
+                      <span className="min-w-0 leading-snug">{t}</span>
                       <span className={`ml-1 text-xs flex-shrink-0 ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>
                         {count > 0 ? count : '—'}
                       </span>
