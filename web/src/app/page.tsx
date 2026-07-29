@@ -86,6 +86,7 @@ export default function HomePage() {
   const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
   const text = UI_TEXT[displayLanguage]
   const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
+  const resultsTopRef = useRef<HTMLDivElement | null>(null)
   const bookmarkDeviceIdRef = useRef<string | null>(null)
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
@@ -309,6 +310,16 @@ export default function HomePage() {
 
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
+  const scrollToResultsStart = () => {
+    requestAnimationFrame(() => {
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      resultsTopRef.current?.scrollIntoView({
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+        block: 'start',
+      })
+    })
+  }
+
   const enterFavorites = () => {
     setShowFavorites(true)
     setTopicsOpen(false)
@@ -329,12 +340,21 @@ export default function HomePage() {
     setTopicsOpen(false)
     setPage(1)
     setShowFavorites(false)
+    scrollToResultsStart()
+  }
+
+  const handleAllTopicsClick = () => {
+    setActiveTopic(null)
+    setTopicsOpen(false)
+    setPage(1)
+    setShowFavorites(false)
+    scrollToResultsStart()
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur" aria-label={text.mainNavigation}>
-        <div className="mx-auto flex min-h-14 max-w-5xl items-center gap-3 px-4 py-2 sm:min-h-16">
+        <div className="mx-auto flex min-h-14 max-w-7xl items-center gap-3 px-4 py-2 sm:min-h-16">
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg">
               <span className="sm:hidden">{text.brandCompact}</span>
@@ -345,7 +365,7 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-2">
+          <div className="flex flex-shrink-0 items-center gap-3 sm:gap-5">
             <button
               type="button"
               onClick={() => {
@@ -410,10 +430,10 @@ export default function HomePage() {
         </div>
       </nav>
 
-      <div className="mx-auto max-w-5xl px-4 py-4 sm:py-5 lg:py-6">
-        <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
+      <div className="mx-auto max-w-7xl px-4 py-4 sm:py-5 lg:py-6">
+        <div className="flex flex-col gap-6 lg:flex-row lg:gap-12">
           {/* 主题目录：手机/平板折叠菜单，大屏左侧竖排 */}
-          <aside className="lg:w-44 lg:flex-shrink-0">
+          <aside className="lg:w-60 lg:flex-shrink-0">
             <div className="lg:sticky lg:top-24">
               <p className="mb-3 hidden text-xs font-semibold uppercase tracking-wide text-gray-400 lg:block">
                 {text.topicCategory}
@@ -451,34 +471,31 @@ export default function HomePage() {
                     <nav id="mobile-topic-navigation" className="grid grid-cols-2 gap-1.5 pt-2" aria-label={text.topicCategory}>
                       <button
                         type="button"
-                        onClick={() => {
-                          setActiveTopic(null)
-                          setPage(1)
-                          setShowFavorites(false)
-                          setTopicsOpen(false)
-                        }}
-                        className={`flex min-h-10 items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+                        onClick={handleAllTopicsClick}
+                        className={`flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
                           activeTopic === null
                             ? 'bg-gray-900 text-white'
                             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                         }`}
                       >
                         <span>{text.all}</span>
-                        <span className={activeTopic === null ? 'text-gray-300' : 'text-gray-400'}>{articles.length}</span>
+                        <span className={`min-w-6 text-right ${activeTopic === null ? 'text-gray-300' : 'text-gray-400'}`}>
+                          {articles.length}
+                        </span>
                       </button>
                       {TOPICS.map(({ key }) => ({ t: key, count: topicCounts.get(key) ?? 0 })).map(({ t, count }) => (
                         <button
                           key={t}
                           type="button"
                           onClick={() => handleTopicClick(t)}
-                          className={`flex min-h-10 items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs leading-snug transition-colors ${
+                          className={`flex min-h-10 items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left text-xs leading-snug transition-colors ${
                             activeTopic === t
                               ? 'bg-gray-900 text-white'
                               : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                           }`}
                         >
                           <span className="min-w-0">{getTopicLabel(t, displayLanguage)}</span>
-                          <span className={`flex-shrink-0 ${activeTopic === t ? 'text-gray-300' : 'text-gray-400'}`}>
+                          <span className={`min-w-6 flex-shrink-0 text-right ${activeTopic === t ? 'text-gray-300' : 'text-gray-400'}`}>
                             {count}
                           </span>
                         </button>
@@ -491,15 +508,15 @@ export default function HomePage() {
               {!showFavorites && (
               <nav className="hidden lg:flex lg:flex-col lg:space-y-0.5">
                 <button
-                  onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center justify-between ${
+                  onClick={handleAllTopicsClick}
+                  className={`flex w-full items-center justify-between gap-6 rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
                     activeTopic === null && !showFavorites
                       ? 'bg-gray-900 text-white'
                       : 'text-gray-700 hover:bg-gray-100'
                   }`}
                 >
                   <span>{text.all}</span>
-                  <span className={`text-xs ${activeTopic === null && !showFavorites ? 'text-gray-300' : 'text-gray-400'}`}>
+                  <span className={`min-w-9 text-right text-xs ${activeTopic === null && !showFavorites ? 'text-gray-300' : 'text-gray-400'}`}>
                     {articles.length}
                   </span>
                 </button>
@@ -509,12 +526,12 @@ export default function HomePage() {
                     <button
                       key={t}
                       onClick={() => handleTopicClick(t)}
-                      className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center justify-between ${
+                      className={`flex w-full items-center justify-between gap-6 rounded-lg px-3 py-1.5 text-left text-sm transition-colors ${
                         isActive ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
                       <span className="min-w-0 leading-snug">{getTopicLabel(t, displayLanguage)}</span>
-                      <span className={`ml-1 text-xs flex-shrink-0 ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>
+                      <span className={`min-w-9 flex-shrink-0 text-right text-xs ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>
                         {count > 0 ? count : '—'}
                       </span>
                     </button>
@@ -535,32 +552,39 @@ export default function HomePage() {
               onRegionChange={(r) => { setRegion(r); setPage(1) }}
             />
 
-            <div
-              role="note"
-              aria-label={text.translationNoticeTitle}
-              className="mt-3 flex items-start gap-2 border-l-2 border-amber-300 bg-amber-50/70 px-3 py-2 text-xs leading-relaxed text-amber-900"
-            >
-              <svg
-                aria-hidden="true"
-                width="15"
-                height="15"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                className="mt-0.5 flex-shrink-0"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 11v5" />
-                <path d="M12 8h.01" />
-              </svg>
-              <p>
-                <span className="font-medium">
-                  {text.translationNoticeTitle}{displayLanguage === 'zh' ? '：' : ': '}
-                </span>
+            <details className="group mt-2 text-xs text-gray-400">
+              <summary className="ml-auto flex w-fit cursor-pointer list-none items-center gap-1.5 rounded px-1 py-1 transition-colors hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 [&::-webkit-details-marker]:hidden">
+                <svg
+                  aria-hidden="true"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 11v5" />
+                  <path d="M12 8h.01" />
+                </svg>
+                <span>{text.translationNoticeTitle}</span>
+                <svg
+                  aria-hidden="true"
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className="transition-transform group-open:rotate-180"
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </summary>
+              <p className="ml-auto mt-1 max-w-xl border-r-2 border-gray-200 pr-2 text-right leading-relaxed text-gray-500">
                 {text.translationNotice}
               </p>
-            </div>
+            </details>
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -629,7 +653,7 @@ export default function HomePage() {
               </p>
             )}
 
-            <div className="mt-4 space-y-3">
+            <div id="article-results" ref={resultsTopRef} className="mt-4 scroll-mt-20 space-y-3 sm:scroll-mt-24">
               {loading ? (
                 <div className="text-center py-16 text-gray-400 text-sm">{text.loading}</div>
               ) : showFavorites && favoritesLoading ? (
@@ -664,7 +688,7 @@ export default function HomePage() {
               total={filtered.length}
               pageSize={PAGE_SIZE}
               language={displayLanguage}
-              onChange={(p) => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              onChange={(p) => { setPage(p); scrollToResultsStart() }}
             />
           </div>
         </div>
