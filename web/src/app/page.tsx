@@ -336,8 +336,42 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <header className="mb-8">
+      <nav className="border-b border-gray-200 bg-white" aria-label="页面工具">
+        <div className="mx-auto flex h-11 max-w-5xl items-center justify-end px-4">
+          {!loading && (
+            <div className="flex items-center gap-2">
+              <span className="hidden text-xs text-gray-400 sm:inline">阅读语言</span>
+              <div
+                className="inline-flex h-8 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5"
+                role="group"
+                aria-label="文献显示语言"
+              >
+                {([
+                  ['zh', '中文'],
+                  ['en', 'English'],
+                ] as const).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => changeDisplayLanguage(value)}
+                    aria-pressed={displayLanguage === value}
+                    className={`h-7 min-w-[4.25rem] rounded px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      displayLanguage === value
+                        ? 'bg-gray-900 text-white shadow-sm'
+                        : 'text-gray-500 hover:bg-white hover:text-gray-800'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </nav>
+
+      <div className="max-w-5xl mx-auto px-4 py-5 lg:py-6">
+        <header className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">学前教育前沿</h1>
           <p className="text-sm text-gray-500 mt-1">每日自动抓取国内外学术期刊、政策文件与研究动态</p>
         </header>
@@ -482,35 +516,6 @@ export default function HomePage() {
               onModuleChange={(m) => { setModule(m); setPage(1) }}
               onRegionChange={(r) => { setRegion(r); setPage(1) }}
             />
-
-            {!loading && (
-              <div className="mt-4 flex w-full justify-start sm:justify-end">
-                <div
-                  className="inline-flex h-8 items-center rounded-md border border-gray-200 bg-white p-0.5"
-                  role="group"
-                  aria-label="文献显示语言"
-                >
-                  {([
-                    ['zh', '中文'],
-                    ['en', 'English'],
-                  ] as const).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => changeDisplayLanguage(value)}
-                      aria-pressed={displayLanguage === value}
-                      className={`h-7 min-w-[4.25rem] rounded px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                        displayLanguage === value
-                          ? 'bg-gray-900 text-white'
-                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
