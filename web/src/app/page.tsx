@@ -597,23 +597,19 @@ export default function HomePage() {
                 />
                 {sources.length > 1 && (
                   <div ref={sourceDropdownRef} className="relative w-full sm:w-72">
-                    <div className="flex h-9 w-full items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-blue-400">
-                      <div
-                        tabIndex={0}
-                        aria-label={sourceFilter || text.allSources}
-                        title={sourceFilter || text.allSources}
-                        className="scrollbar-hide min-w-0 flex-1 touch-pan-x overflow-x-auto whitespace-nowrap px-3 text-left text-sm text-gray-700 focus:outline-none"
-                      >
+                    <button
+                      type="button"
+                      onClick={() => setSourceDropdownOpen((v) => !v)}
+                      aria-label={text.selectSource}
+                      aria-haspopup="listbox"
+                      aria-expanded={sourceDropdownOpen}
+                      title={sourceFilter || text.allSources}
+                      className="flex h-9 w-full items-center overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:border-gray-300 focus:outline-none focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      <span className="scrollbar-hide min-w-0 flex-1 touch-pan-x overflow-x-auto whitespace-nowrap px-3 text-left text-sm">
                         {sourceFilter || text.allSources}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSourceDropdownOpen((v) => !v)}
-                        aria-label={text.selectSource}
-                        aria-haspopup="listbox"
-                        aria-expanded={sourceDropdownOpen}
-                        className="flex h-full w-9 flex-shrink-0 items-center justify-center border-l border-gray-100 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
-                      >
+                      </span>
+                      <span className="flex h-full w-9 flex-shrink-0 items-center justify-center border-l border-gray-100 text-gray-400 transition-colors">
                         <svg
                           aria-hidden="true"
                           width="15"
@@ -626,8 +622,8 @@ export default function HomePage() {
                         >
                           <path d="m6 9 6 6 6-6" />
                         </svg>
-                      </button>
-                    </div>
+                      </span>
+                    </button>
                     {sourceDropdownOpen && (
                       <div className="absolute right-0 z-20 mt-1 w-full max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white shadow-lg">
                         <div className="max-h-64 touch-pan-x touch-pan-y overflow-auto" role="listbox" aria-label={text.allSources}>
