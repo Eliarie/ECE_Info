@@ -603,40 +603,70 @@ export default function HomePage() {
                   className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-400"
                 />
                 {sources.length > 1 && (
-                  <div ref={sourceDropdownRef} className="relative w-full sm:w-48">
-                    <button
-                      type="button"
-                      onClick={() => setSourceDropdownOpen((v) => !v)}
-                      className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-left truncate focus:outline-none focus:border-blue-400"
-                    >
-                      {sourceFilter || text.allSources}
-                    </button>
-                    {sourceDropdownOpen && (
-                      <div className="absolute z-20 mt-1 right-0 w-64 max-w-[82vw] rounded-lg border border-gray-200 bg-white shadow-lg max-h-56 overflow-y-auto">
-                        <button
-                          type="button"
-                          onClick={() => { setSourceFilter(''); setSourceDropdownOpen(false); setPage(1) }}
-                          className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${sourceFilter === '' ? 'text-blue-600' : 'text-gray-700'}`}
+                  <div ref={sourceDropdownRef} className="relative w-full sm:w-72">
+                    <div className="flex h-9 w-full items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:border-blue-400">
+                      <div
+                        tabIndex={0}
+                        aria-label={sourceFilter || text.allSources}
+                        title={sourceFilter || text.allSources}
+                        className="scrollbar-hide min-w-0 flex-1 touch-pan-x overflow-x-auto whitespace-nowrap px-3 text-left text-sm text-gray-700 focus:outline-none"
+                      >
+                        {sourceFilter || text.allSources}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSourceDropdownOpen((v) => !v)}
+                        aria-label={text.selectSource}
+                        aria-haspopup="listbox"
+                        aria-expanded={sourceDropdownOpen}
+                        className="flex h-full w-9 flex-shrink-0 items-center justify-center border-l border-gray-100 text-gray-400 transition-colors hover:bg-gray-50 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+                      >
+                        <svg
+                          aria-hidden="true"
+                          width="15"
+                          height="15"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          className={`transition-transform ${sourceDropdownOpen ? 'rotate-180' : ''}`}
                         >
-                          {text.allSources}
-                        </button>
-                        {sources.map((s) => {
-                          const count = sourceCounts.get(s) ?? 0
-                          return (
-                            <button
-                              key={s}
-                              type="button"
-                              onClick={() => { setSourceFilter(s); setSourceDropdownOpen(false); setPage(1) }}
-                              className={`flex w-full items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === s ? 'text-blue-600' : 'text-gray-700'}`}
-                              title={s}
-                            >
-                              <span className="min-w-0 flex-1 truncate">{s}</span>
-                              <span className="flex-shrink-0 text-xs text-gray-400">
-                                {count > 0 ? count : text.unavailable}
-                              </span>
-                            </button>
-                          )
-                        })}
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                    </div>
+                    {sourceDropdownOpen && (
+                      <div className="absolute right-0 z-20 mt-1 w-full max-w-[calc(100vw-2rem)] rounded-lg border border-gray-200 bg-white shadow-lg">
+                        <div className="max-h-64 touch-pan-x touch-pan-y overflow-auto" role="listbox" aria-label={text.allSources}>
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={sourceFilter === ''}
+                            onClick={() => { setSourceFilter(''); setSourceDropdownOpen(false); setPage(1) }}
+                            className={`block w-max min-w-full whitespace-nowrap px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === '' ? 'text-blue-600' : 'text-gray-700'}`}
+                          >
+                            {text.allSources}
+                          </button>
+                          {sources.map((s) => {
+                            const count = sourceCounts.get(s) ?? 0
+                            return (
+                              <button
+                                key={s}
+                                type="button"
+                                role="option"
+                                aria-selected={sourceFilter === s}
+                                onClick={() => { setSourceFilter(s); setSourceDropdownOpen(false); setPage(1) }}
+                                className={`flex w-max min-w-full items-center gap-6 whitespace-nowrap px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === s ? 'text-blue-600' : 'text-gray-700'}`}
+                                title={s}
+                              >
+                                <span>{s}</span>
+                                <span className="ml-auto min-w-7 flex-shrink-0 text-right text-xs text-gray-400">
+                                  {count > 0 ? count : text.unavailable}
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
