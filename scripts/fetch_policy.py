@@ -457,6 +457,15 @@ def scrape_omep():
     return articles
 
 
+def extract_brookings_listing_abstract(card) -> str | None:
+    """Return only an explicit summary, never list-card bylines or dates."""
+    summary = card.select_one(".summary, .excerpt, .description")
+    if not summary:
+        return None
+    text = summary.get_text(" ", strip=True)
+    return text or None
+
+
 def scrape_brookings():
     """Brookings ECE"""
     articles = []
@@ -476,8 +485,7 @@ def scrape_brookings():
             url = a["href"]
             if not url.startswith("http"):
                 url = "https://www.brookings.edu" + url
-            p = card.find("p")
-            abstract = p.get_text(strip=True) if p else None
+            abstract = extract_brookings_listing_abstract(card)
             articles.append({
                 "title_original": title, "abstract_original": abstract,
                 "source_name": "Brookings Institution", "source_url": url,
