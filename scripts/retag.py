@@ -1,97 +1,115 @@
-"""
-存量数据补打主题标签脚本
-给已翻译但 topic_tags 为空的文章，用 DeepSeek 补打标签。
-用法：
-  SUPABASE_URL=... SUPABASE_KEY=... DEEPSEEK_API_KEY=... python scripts/retag.py
-"""
+"""Reclassify every article not yet using the exclusive primary taxonomy."""
 
-import os
-import sys
+from __future__ import annotations
+
 import json
+import os
 import time
+
 from openai import OpenAI
 from supabase import create_client
+from topic_taxonomy import TOPIC_VERSION, taxonomy_prompt, validated_topic
 
-# 修复 Windows 控制台编码问题
-if sys.platform == 'win32':
-    sys.stdout.reconfigure(encoding='utf-8')
+PAGE_SIZE = 500
+MAX_ARTICLES = int(os.environ.get("RETAG_MAX_ARTICLES", "0"))
+REQUEST_RETRIES = int(os.environ.get("RETAG_REQUEST_RETRIES", "3"))
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
+supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+client = OpenAI(
+    api_key=os.environ["DEEPSEEK_API_KEY"],
+    base_url="https://api.deepseek.com",
+)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 
-BATCH_SIZE = 50
-
-TOPIC_LIST = [
-    "数学与STEM", "语言与读写", "社会情感发展", "游戏与学习",
-    "教师与教学", "家庭与亲子", "科技与AI", "健康与体育",
-    "特殊需要与融合", "评估与测量", "课程与环境", "政策与质量",
-    "认知与神经", "创造力与艺术",
-]
-TOPIC_LIST_STR = "、".join(TOPIC_LIST)
+def load_candidates() -> list[dict]:
+    candidates: list[dict] = []
+    offset = 0
+    while True:
+        result = (
+            supabase.table("articles")
+            .select(
+                "id,title_original,title_zh,abstract_original,abstract_zh,"
+                "topic_version,published_at,fetched_at"
+            )
+            .order("published_at", desc=True, nullsfirst=False)
+            .order("fetched_at", desc=True)
+            .range(offset, offset + PAGE_SIZE - 1)
+            .execute()
+        )
+        rows = result.data or []
+        candidates.extend(
+            article for article in rows
+            if article.get("topic_version") != TOPIC_VERSION
+        )
+        if len(rows) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+    return candidates[:MAX_ARTICLES] if MAX_ARTICLES > 0 else candidates
 
 
 def tag_article(title: str, abstract: str | None) -> list[str]:
     content = f"标题：{title}"
     if abstract:
         content += f"\n\n摘要：{abstract}"
+    prompt = f"""你是学前教育研究分类专家。
+{taxonomy_prompt()}
 
-    prompt = f"""你是学前教育领域的学术助手。从以下主题列表中选出最匹配的1-3个标签（可以不选，不能超出列表范围）：
-{TOPIC_LIST_STR}
-
-输出格式（JSON，不要有其他内容）：
-{{"topics": ["标签1", "标签2"]}}
+严格输出 JSON，不要有其他内容：
+{{"category": "唯一主类别或null", "confidence": 0.0}}
 
 {content}"""
-
-    resp = client.chat.completions.create(
+    response = client.chat.completions.create(
         model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=100,
+        temperature=0,
+        max_tokens=160,
         response_format={"type": "json_object"},
     )
-    raw = resp.choices[0].message.content.strip()
-    try:
-        data = json.loads(raw)
-        return [t for t in (data.get("topics") or []) if t in TOPIC_LIST]
-    except Exception:
-        return []
+    data = json.loads((response.choices[0].message.content or "").strip())
+    return validated_topic(data.get("category"), data.get("confidence"))
 
 
-def run():
-    # 查找 topic_tags 为空数组的文章（已翻译或国内文章）
-    result = supabase.table("articles") \
-        .select("id, title_original, title_zh, abstract_original, abstract_zh") \
-        .eq("topic_tags", "[]") \
-        .limit(BATCH_SIZE) \
-        .execute()
+def tag_with_retries(article: dict) -> list[str]:
+    last_error: Exception | None = None
+    title = article.get("title_zh") or article.get("title_original") or ""
+    abstract = article.get("abstract_zh") or article.get("abstract_original")
+    for attempt in range(1, REQUEST_RETRIES + 1):
+        try:
+            return tag_article(title, abstract)
+        except Exception as error:
+            last_error = error
+            print(f"    [WARN] 第 {attempt}/{REQUEST_RETRIES} 次分类失败: {error}")
+            if attempt < REQUEST_RETRIES:
+                time.sleep(min(2 ** attempt, 8))
+    raise RuntimeError(str(last_error))
 
-    articles = result.data
+
+def run() -> None:
+    articles = load_candidates()
     if not articles:
-        print("没有需要补标签的文章")
+        print("所有文献已使用最新单一主类别")
         return
 
-    print(f"开始为 {len(articles)} 篇文章打标签...")
-
-    for i, article in enumerate(articles):
-        title = article.get("title_zh") or article.get("title_original", "")
-        abstract = article.get("abstract_zh") or article.get("abstract_original")
+    print(f"开始重新分类 {len(articles)} 篇文献（按发布日期从新到旧）...")
+    failed: list[str] = []
+    for index, article in enumerate(articles, start=1):
         try:
-            topics = tag_article(title, abstract)
-            supabase.table("articles").update({
-                "topic_tags": topics,
-            }).eq("id", article["id"]).execute()
-            print(f"  [{i+1}/{len(articles)}] {title[:40]}… → {topics}")
+            topics = tag_with_retries(article)
+            (
+                supabase.table("articles")
+                .update({"topic_tags": topics, "topic_version": TOPIC_VERSION})
+                .eq("id", article["id"])
+                .execute()
+            )
+            print(f"  [{index}/{len(articles)}] [OK] {topics or ['未可靠分类']}")
             time.sleep(0.3)
-        except Exception as e:
-            print(f"  [ERR] {article['id']}: {e}")
-            time.sleep(2)
+        except Exception as error:
+            failed.append(article["id"])
+            print(f"  [{index}/{len(articles)}] [ERR] {article['id']}: {error}")
 
-    print("补标签完成，如还有未处理的文章请再次运行")
+    print(f"重新分类完成：成功 {len(articles) - len(failed)}，失败 {len(failed)}")
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@ import os
 import re
 import time
 import requests
+from datetime import datetime, timezone
 from supabase import create_client
 from topic_classifier import classify_topics
 
@@ -21,6 +22,7 @@ OPENALEX_EMAIL = os.environ.get("OPENALEX_EMAIL", "")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 SINCE_DATE = "2026-01-01"
+UNTIL_DATE = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
 # 所有期刊（含 module 分类）
 JOURNALS = [
@@ -105,7 +107,10 @@ def fetch_all_papers(journal: dict, journal_id: str) -> list[dict]:
 
     while True:
         params = {
-            "filter": f"primary_location.source.id:{journal_id},from_publication_date:{SINCE_DATE}",
+            "filter": (
+                f"primary_location.source.id:{journal_id},"
+                f"from_publication_date:{SINCE_DATE},to_publication_date:{UNTIL_DATE}"
+            ),
             "sort": "publication_date:desc",
             "per-page": 200,
             "cursor": cursor,

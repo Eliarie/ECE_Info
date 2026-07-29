@@ -121,6 +121,7 @@ def get_openalex_journal_id(journal_name: str, configured_id: str | None = None)
 def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
     """从OpenAlex抓取指定期刊最近N天的论文"""
     since_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
+    until_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     journal_id = get_openalex_journal_id(journal["name"], journal.get("openalex_id"))
     if not journal_id:
@@ -128,7 +129,10 @@ def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
         return []
 
     params = {
-        "filter": f"primary_location.source.id:{journal_id},from_publication_date:{since_date}",
+        "filter": (
+            f"primary_location.source.id:{journal_id},"
+            f"from_publication_date:{since_date},to_publication_date:{until_date}"
+        ),
         "sort": "publication_date:desc",
         "per-page": 50,
         "select": "title,abstract_inverted_index,doi,publication_date,primary_location,authorships,cited_by_count",

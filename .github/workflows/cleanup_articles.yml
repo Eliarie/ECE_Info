@@ -1,0 +1,30 @@
+name: 旧文献放流
+
+on:
+  schedule:
+    - cron: '0 19 * * 0'  # 北京时间每周一凌晨 3 点
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: 安装 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install -r requirements.txt
+
+      - name: 清理未收藏旧文献
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          ARTICLE_CLEANUP_TOKEN: ${{ secrets.ARTICLE_CLEANUP_TOKEN }}
+          ARTICLE_RETENTION_DAYS: '365'
+          ARTICLE_CLEANUP_MAX_DELETE: '200'
+        run: python scripts/cleanup_old_articles.py

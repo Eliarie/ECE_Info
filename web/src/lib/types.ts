@@ -1,5 +1,6 @@
 export type Module = 'policy' | 'research_frontier' | 'research_practice' | 'forum'
 export type Region = 'domestic' | 'international'
+export type DisplayLanguage = 'zh' | 'en'
 
 export interface Article {
   id: string
@@ -18,4 +19,5 @@ export interface Article {
   is_translated: boolean
   cited_by_count?: number
   topic_tags?: string[]
+  topic_version?: string | null
 }

@@ -1,13 +1,15 @@
-"""
-DeepSeek 翻译 + AI 主题分类脚本
-批量翻译数据库中未翻译的国际来源文章（标题+摘要），同时用 AI 打主题标签
-"""
+"""Translate every incomplete international article, newest first."""
 
-import os
+from __future__ import annotations
+
 import json
+import os
+import re
 import time
+
 from openai import OpenAI
 from supabase import create_client
+from topic_taxonomy import TOPIC_VERSION, taxonomy_prompt, validated_topic
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
@@ -16,15 +18,33 @@ DEEPSEEK_API_KEY = os.environ["DEEPSEEK_API_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 
-BATCH_SIZE = 20
+PAGE_SIZE = 500
+MAX_ARTICLES = int(os.environ.get("TRANSLATION_MAX_ARTICLES", "0"))
+REQUEST_RETRIES = int(os.environ.get("TRANSLATION_REQUEST_RETRIES", "3"))
 
-TOPIC_LIST = [
-    "数学与STEM", "语言与读写", "社会情感发展", "游戏与学习",
-    "教师与教学", "家庭与亲子", "科技与AI", "健康与体育",
-    "特殊需要与融合", "评估与测量", "课程与环境", "政策与质量",
-    "认知与神经", "创造力与艺术",
-]
-TOPIC_LIST_STR = "、".join(TOPIC_LIST)
+CJK_PATTERN = re.compile(r"[\u3400-\u9fff]")
+LATIN_PATTERN = re.compile(r"[A-Za-z]")
+
+
+def contains_chinese(value: str | None) -> bool:
+    return bool(value and CJK_PATTERN.search(value))
+
+
+def is_chinese_translation(value: str | None) -> bool:
+    if not value:
+        return False
+    chinese_count = len(CJK_PATTERN.findall(value))
+    latin_count = len(LATIN_PATTERN.findall(value))
+    if chinese_count < 2:
+        return False
+    return chinese_count / max(chinese_count + latin_count, 1) >= 0.20
+
+
+def translation_is_complete(article: dict) -> bool:
+    if not article.get("is_translated") or not is_chinese_translation(article.get("title_zh")):
+        return False
+    abstract = (article.get("abstract_original") or "").strip()
+    return not abstract or is_chinese_translation(article.get("abstract_zh"))
 
 
 def ensure_articles_table() -> bool:
@@ -39,23 +59,53 @@ def ensure_articles_table() -> bool:
         raise
 
 
+def load_translation_candidates() -> list[dict]:
+    candidates: list[dict] = []
+    offset = 0
+
+    while True:
+        result = (
+            supabase.table("articles")
+            .select(
+                "id,title_original,title_zh,abstract_original,abstract_zh,"
+                "is_translated,published_at,fetched_at"
+            )
+            .eq("region", "international")
+            .order("published_at", desc=True, nullsfirst=False)
+            .order("fetched_at", desc=True)
+            .range(offset, offset + PAGE_SIZE - 1)
+            .execute()
+        )
+        rows = result.data or []
+        candidates.extend(article for article in rows if not translation_is_complete(article))
+        if len(rows) < PAGE_SIZE:
+            break
+        offset += PAGE_SIZE
+
+    if MAX_ARTICLES > 0:
+        return candidates[:MAX_ARTICLES]
+    return candidates
+
+
 def translate_and_tag(title: str, abstract: str | None) -> tuple[str, str | None, list[str]]:
-    """调用 DeepSeek 翻译标题/摘要，并返回主题标签列表"""
+    """Translate title/abstract and return validated topic labels."""
     content = f"标题：{title}"
     if abstract:
         content += f"\n\n摘要：{abstract}"
 
-    prompt = f"""你是学前教育领域的学术助手。请完成以下两项任务：
+    prompt = f"""你是学前教育领域的学术翻译。请完成以下任务：
 
-1. 将学术内容翻译成中文（保持学术准确性）
-2. 从以下主题列表中选出最匹配的1-3个标签（可以不选，但不能超出列表范围）：
-   {TOPIC_LIST_STR}
+1. 将标题和摘要完整翻译成简体中文，保持学术准确性，不得保留未翻译的英文句子
+2. 根据中心研究问题判断唯一的主类别并给出置信度。
+
+{taxonomy_prompt()}
 
 输出格式严格如下（JSON，不要有其他内容）：
 {{
-  "title_zh": "中文标题",
-  "abstract_zh": "中文摘要（无摘要则为null）",
-  "topics": ["标签1", "标签2"]
+  "title_zh": "完整中文标题",
+  "abstract_zh": "完整中文摘要（原文无摘要则为null）",
+  "category": "唯一主类别，无法可靠判断时为null",
+  "confidence": 0.0
 }}
 
 {content}"""
@@ -63,64 +113,79 @@ def translate_and_tag(title: str, abstract: str | None) -> tuple[str, str | None
     resp = client.chat.completions.create(
         model="deepseek-chat",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.2,
-        max_tokens=1000,
+        temperature=0,
+        max_tokens=4000,
         response_format={"type": "json_object"},
     )
-    raw = resp.choices[0].message.content.strip()
+    raw = (resp.choices[0].message.content or "").strip()
+    data = json.loads(raw)
 
-    try:
-        data = json.loads(raw)
-    except Exception:
-        # JSON 解析失败，降级为纯文本解析
-        return title, None, []
+    title_zh = (data.get("title_zh") or "").strip()
+    abstract_zh = (data.get("abstract_zh") or "").strip() or None
+    topics = validated_topic(data.get("category"), data.get("confidence"))
 
-    title_zh = data.get("title_zh") or title
-    abstract_zh = data.get("abstract_zh") or None
-    topics = [t for t in (data.get("topics") or []) if t in TOPIC_LIST]
+    if not is_chinese_translation(title_zh):
+        raise ValueError("模型未返回有效中文标题")
+    if abstract and not is_chinese_translation(abstract_zh):
+        raise ValueError("模型未返回有效中文摘要")
 
     return title_zh, abstract_zh, topics
 
 
-def run():
+def translate_article(article: dict) -> tuple[str, str | None, list[str]]:
+    last_error: Exception | None = None
+    for attempt in range(1, REQUEST_RETRIES + 1):
+        try:
+            return translate_and_tag(
+                article["title_original"],
+                article.get("abstract_original"),
+            )
+        except Exception as error:
+            last_error = error
+            print(f"    [WARN] 第 {attempt}/{REQUEST_RETRIES} 次翻译失败: {error}")
+            if attempt < REQUEST_RETRIES:
+                time.sleep(min(2 ** attempt, 8))
+    raise RuntimeError(str(last_error))
+
+
+def run() -> None:
     if not ensure_articles_table():
         return
 
-    result = supabase.table("articles") \
-        .select("id, title_original, abstract_original") \
-        .eq("is_translated", False) \
-        .eq("region", "international") \
-        .limit(BATCH_SIZE) \
-        .execute()
-
-    articles = result.data
+    articles = load_translation_candidates()
     if not articles:
         print("没有需要翻译的文章")
         return
 
-    print(f"开始翻译 + 分类 {len(articles)} 篇文章...")
+    print(f"开始翻译 + 分类 {len(articles)} 篇文章（按发布日期从新到旧）...")
+    translated = 0
+    failed: list[str] = []
 
-    for i, article in enumerate(articles):
+    for index, article in enumerate(articles, start=1):
         try:
-            title_zh, abstract_zh, topics = translate_and_tag(
-                article["title_original"],
-                article.get("abstract_original"),
+            title_zh, abstract_zh, topics = translate_article(article)
+            (
+                supabase.table("articles")
+                .update({
+                    "title_zh": title_zh,
+                    "abstract_zh": abstract_zh,
+                    "topic_tags": topics,
+                    "topic_version": TOPIC_VERSION,
+                    "is_translated": True,
+                })
+                .eq("id", article["id"])
+                .execute()
             )
-            supabase.table("articles").update({
-                "title_zh": title_zh,
-                "abstract_zh": abstract_zh,
-                "topic_tags": topics,
-                "is_translated": True,
-            }).eq("id", article["id"]).execute()
+            translated += 1
+            print(f"  [{index}/{len(articles)}] [OK] {article['title_original'][:52]}…")
+            time.sleep(0.3)
+        except Exception as error:
+            failed.append(article["id"])
+            print(f"  [{index}/{len(articles)}] [ERR] {article['id']}: {error}")
 
-            print(f"  [{i+1}/{len(articles)}] {article['title_original'][:40]}… → {topics}")
-            time.sleep(0.5)
-
-        except Exception as e:
-            print(f"  [ERR] {article['id']}: {e}")
-            time.sleep(2)
-
-    print("翻译 + 分类完成")
+    print(f"翻译完成：成功 {translated}，失败 {len(failed)}")
+    if failed:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

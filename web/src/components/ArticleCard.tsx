@@ -1,20 +1,25 @@
 'use client'
 
 import { useState } from 'react'
-import type { Article } from '@/lib/types'
+import type { Article, DisplayLanguage } from '@/lib/types'
 
 interface Props {
   article: Article
   bookmarked: boolean
   onToggleBookmark: (id: string) => void
+  language: DisplayLanguage
 }
 
-export default function ArticleCard({ article, bookmarked, onToggleBookmark }: Props) {
+export default function ArticleCard({ article, bookmarked, onToggleBookmark, language }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
 
-  const title = article.title_zh || article.title_original
-  const abstract = article.abstract_zh || article.abstract_original
+  const title = language === 'zh'
+    ? article.title_zh || article.title_original
+    : article.title_original || article.title_zh || ''
+  const abstract = language === 'zh'
+    ? article.abstract_zh || article.abstract_original
+    : article.abstract_original || article.abstract_zh
   const date = article.published_at
     ? new Date(article.published_at).toLocaleDateString('zh-CN')
     : null
@@ -38,9 +43,6 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark }: P
           <h3 className="text-base font-medium text-gray-900 group-hover:text-blue-600 leading-snug">
             {title}
           </h3>
-          {article.title_zh && (
-            <p className="text-sm text-gray-400 mt-0.5 truncate">{article.title_original}</p>
-          )}
         </a>
         <button
           onClick={handleBookmark}

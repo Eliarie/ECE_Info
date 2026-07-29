@@ -1,37 +1,100 @@
-"""
-主题分类器 - 根据标题/摘要关键词自动打标签
-供 fetch_journals.py 和 backfill_2026.py 共用
-"""
+"""Conservative single-topic classifier used before AI classification."""
 
 from __future__ import annotations
 
 import re
 
-# 主题规则：(标签, 关键词正则)
-# 顺序无关，一篇文章可以有多个标签
-TOPIC_RULES: list[tuple[str, str]] = [
-    ("数学与STEM",      r"math|mathematics|numeracy|STEM|science|number sense|counting|arithmetic|数学|数感|计算"),
-    ("语言与读写",      r"language|literacy|reading|writing|phonics|vocabulary|bilingual|multilingual|语言|阅读|识字|双语|词汇"),
-    ("社会情感发展",    r"social.emotional|emotion|self.regulation|attachment|peer|friendship|behavior|prosocial|社会性|情绪|自我调节|依恋|同伴"),
-    ("游戏与学习",      r"play|playful learning|play-based|pretend play|outdoor play|游戏|玩耍|户外"),
-    ("教师与教学",      r"teacher|pedagogy|teaching|instruction|professional development|educator|curriculum|教师|教学|课程|专业发展"),
-    ("家庭与亲子",      r"parent|family|home|caregiver|mother|father|parenting|家庭|亲子|父母|家长"),
-    ("科技与AI",        r"technology|digital|AI|artificial intelligence|machine learning|XAI|explainable|robot|screen|app|tablet|科技|人工智能|数字|机器人"),
-    ("健康与体育",      r"health|physical|motor|nutrition|obesity|sleep|exercise|outdoor|身体|健康|运动|体育|营养"),
-    ("特殊需要与融合",  r"special need|disability|autism|ASD|inclusion|inclusive|intervention|delay|特殊|融合|自闭|干预|残障"),
-    ("评估与测量",      r"assessment|measure|test|scale|instrument|validity|reliability|评估|测量|量表|测试"),
-    ("课程与环境",      r"curriculum|environment|classroom|setting|preschool|kindergarten|childcare|center|课程|环境|幼儿园|托育"),
-    ("政策与质量",      r"policy|quality|standard|regulation|funding|access|equity|政策|质量|标准|公平|普惠"),
-    ("认知与神经",      r"cognitive|cognition|executive function|working memory|attention|brain|neural|认知|执行功能|工作记忆|注意力|大脑"),
-    ("创造力与艺术",    r"creative|creativity|art|music|drama|drawing|imagination|创造|艺术|音乐|绘画|想象"),
-]
+from topic_taxonomy import TOPIC_LIST
+
+# Patterns intentionally omit broad words such as "learning", "child", "teacher",
+# "home", and "quality". Ambiguous records are left unclassified for the AI pass.
+TOPIC_PATTERNS: dict[str, tuple[str, ...]] = {
+    "语言与读写": (
+        r"\bliteracy\b", r"\bread(?:ing)?\b", r"\bwriting\b", r"\bvocabular(?:y|ies)\b",
+        r"\bphon(?:ics|ological|emic)\b", r"\bnarrative\b", r"\bbilingual\b", r"\bmultilingual\b",
+        r"语言发展", r"早期阅读", r"词汇", r"语音", r"叙事", r"双语", r"多语",
+    ),
+    "数学与科学": (
+        r"\bmath(?:ematic(?:s|al))?\b", r"\bnumeracy\b", r"\bnumber sense\b", r"\bcounting\b",
+        r"\barithmetic\b", r"\bspatial reasoning\b", r"\bscience inquiry\b", r"\bSTEM\b",
+        r"数感", r"计数", r"算术", r"数学", r"科学探究", r"空间思维",
+    ),
+    "社会情感与心理": (
+        r"social[- ]emotional", r"\bemotion(?:al|s)?\b", r"self[- ]regulation", r"\battachment\b",
+        r"\bprosocial\b", r"\bpeer relations?\b", r"\bfriendship\b", r"\btemperament\b",
+        r"\banxiety\b", r"\bdepression\b", r"\bmental health\b", r"\bbehavior problems?\b",
+        r"社会情感", r"情绪", r"自我调节", r"依恋", r"同伴关系", r"亲社会", r"心理健康", r"行为问题",
+    ),
+    "认知与学习": (
+        r"executive function", r"working memory", r"cognitive flexibility", r"\bmetacognition\b",
+        r"\battention control\b", r"\binhibitory control\b", r"\bcausal reasoning\b",
+        r"执行功能", r"工作记忆", r"认知灵活性", r"元认知", r"注意控制", r"抑制控制", r"因果推理",
+    ),
+    "身体健康与运动": (
+        r"\bmotor skills?\b", r"\bphysical activity\b", r"\bnutrition\b", r"\bsleep\b",
+        r"\bobesity\b", r"\bbody mass index\b", r"\bBMI\b", r"\bphysical health\b",
+        r"动作发展", r"运动能力", r"体力活动", r"营养", r"睡眠", r"肥胖", r"身体健康",
+    ),
+    "艺术与创造": (
+        r"\bmusic education\b", r"\bvisual arts?\b", r"\bdance education\b", r"\bdrama education\b",
+        r"\bdrawing\b", r"\bcreative expression\b", r"\bcreativity\b",
+        r"音乐教育", r"视觉艺术", r"舞蹈教育", r"戏剧教育", r"绘画", r"创造性表达",
+    ),
+    "游戏课程与环境": (
+        r"\bplay[- ]based\b", r"\bplayful learning\b", r"\bpretend play\b", r"\bfree play\b",
+        r"\boutdoor play\b", r"\bcurriculum design\b", r"\bclassroom environment\b",
+        r"\blearning environment\b", r"\bloose parts\b",
+        r"游戏化", r"假装游戏", r"自主游戏", r"户外游戏", r"课程设计", r"班级环境", r"学习环境",
+    ),
+    "教师专业与教学": (
+        r"\bteacher education\b", r"\bprofessional development\b", r"\bteacher beliefs?\b",
+        r"\bteacher wellbeing\b", r"\bteacher practices?\b", r"\bpedagog(?:y|ical)\b",
+        r"\bteacher[- ]child interaction\b", r"\binstructional practice\b",
+        r"教师教育", r"专业发展", r"教师信念", r"教师福祉", r"教学实践", r"师幼互动",
+    ),
+    "家庭社区与家园共育": (
+        r"\bparenting\b", r"\bparent[- ]child interaction\b", r"\bhome learning environment\b",
+        r"\bfamily engagement\b", r"\bparent engagement\b", r"\bfamily[- ]school partnership\b",
+        r"\bcommunity partnership\b", r"\bcaregiver sensitivity\b",
+        r"家庭养育", r"亲子互动", r"家庭学习环境", r"家长参与", r"家园共育", r"社区合作",
+    ),
+    "特殊教育与融合": (
+        r"\bspecial education\b", r"\bautis(?:m|tic)\b", r"\bASD\b", r"\bdisabilit(?:y|ies)\b",
+        r"\bdevelopmental delay\b", r"\bearly intervention\b", r"\binclusive education\b",
+        r"特殊教育", r"自闭症", r"孤独症", r"残障", r"发展迟缓", r"早期干预", r"融合教育",
+    ),
+    "数字技术与AI": (
+        r"\bartificial intelligence\b", r"\bgenerative AI\b", r"\bmachine learning\b",
+        r"\bdigital technolog(?:y|ies)\b", r"\bscreen media\b", r"\bscreen time\b",
+        r"\beducational robots?\b", r"\btablet use\b", r"\bcoding education\b", r"\bcomputational thinking\b",
+        r"人工智能", r"生成式AI", r"数字技术", r"屏幕媒介", r"屏幕时间", r"教育机器人", r"编程教育", r"计算思维",
+    ),
+    "政策质量与治理": (
+        r"\bearly childhood policy\b", r"\bECEC policy\b", r"\bpublic funding\b",
+        r"\buniversal pre[- ]k\b", r"\bchildcare access\b", r"\bECEC access\b",
+        r"\baccreditation\b", r"\bstructural quality\b", r"\bprocess quality\b", r"\bworkforce policy\b",
+        r"学前教育政策", r"托育政策", r"公共财政", r"普惠托育", r"入园机会", r"质量监管", r"教师队伍政策",
+    ),
+}
+
+assert list(TOPIC_PATTERNS) == TOPIC_LIST
+
+
+def _score(text: str, patterns: tuple[str, ...], weight: int) -> int:
+    return sum(weight for pattern in patterns if re.search(pattern, text, re.IGNORECASE))
 
 
 def classify_topics(title: str, abstract: str | None) -> list[str]:
-    """返回匹配的主题标签列表"""
-    text = (title or "") + " " + (abstract or "")
-    tags = []
-    for label, pattern in TOPIC_RULES:
-        if re.search(pattern, text, re.IGNORECASE):
-            tags.append(label)
-    return tags
+    """Return one high-confidence primary category, or [] when ambiguous."""
+    title_text = title or ""
+    abstract_text = abstract or ""
+    scores = {
+        label: _score(title_text, patterns, 4) + _score(abstract_text, patterns, 1)
+        for label, patterns in TOPIC_PATTERNS.items()
+    }
+    ranked = sorted(scores.items(), key=lambda item: item[1], reverse=True)
+    best_label, best_score = ranked[0]
+    second_score = ranked[1][1]
+    if best_score < 3 or best_score - second_score < 2:
+        return []
+    return [best_label]

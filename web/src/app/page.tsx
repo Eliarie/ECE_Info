@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
 import Pagination from '@/components/Pagination'
-import type { Article, Module, Region } from '@/lib/types'
+import type { Article, DisplayLanguage, Module, Region } from '@/lib/types'
 import coreJournals from '@/config/core-journals.json'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -14,6 +14,8 @@ const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey)
 const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAnonKey as string) : null
 
 const PAGE_SIZE = 8
+const BOOKMARK_DEVICE_KEY = 'bookmark_device_id'
+const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 
 type CoreJournalConfig = {
   global?: string[]
@@ -56,22 +58,29 @@ const buildCoreJournalSetByRegion = (): Record<Region, Set<string>> => {
 // 核心期刊优先排序：名单由配置文件驱动（按国内/国际分开）
 const CORE_JOURNAL_NAMES_BY_REGION = buildCoreJournalSetByRegion()
 
+const getBookmarkDeviceId = () => {
+  let deviceId = localStorage.getItem(BOOKMARK_DEVICE_KEY)
+  if (!deviceId) {
+    deviceId = crypto.randomUUID()
+    localStorage.setItem(BOOKMARK_DEVICE_KEY, deviceId)
+  }
+  return deviceId
+}
+
 // 所有可能的主题标签（与 topic_classifier.py 保持一致）
 const ALL_TOPICS = [
-  '数学与STEM',
   '语言与读写',
-  '社会情感发展',
-  '游戏与学习',
-  '教师与教学',
-  '家庭与亲子',
-  '科技与AI',
-  '健康与体育',
-  '特殊需要与融合',
-  '评估与测量',
-  '课程与环境',
-  '政策与质量',
-  '认知与神经',
-  '创造力与艺术',
+  '数学与科学',
+  '社会情感与心理',
+  '认知与学习',
+  '身体健康与运动',
+  '艺术与创造',
+  '游戏课程与环境',
+  '教师专业与教学',
+  '家庭社区与家园共育',
+  '特殊教育与融合',
+  '数字技术与AI',
+  '政策质量与治理',
 ]
 
 export default function HomePage() {
@@ -88,7 +97,9 @@ export default function HomePage() {
   const [favoriteArticles, setFavoriteArticles] = useState<Article[]>([])
   const [favoritesLoading, setFavoritesLoading] = useState(false)
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false)
+  const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
   const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
+  const bookmarkDeviceIdRef = useRef<string | null>(null)
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
     if (typeof window === 'undefined') return new Set()
     try {
@@ -96,6 +107,13 @@ export default function HomePage() {
       return saved ? new Set(JSON.parse(saved)) : new Set()
     } catch { return new Set() }
   })
+
+  useEffect(() => {
+    const savedLanguage = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
+    if (savedLanguage === 'zh' || savedLanguage === 'en') {
+      setDisplayLanguage(savedLanguage)
+    }
+  }, [])
 
   useEffect(() => {
     if (!supabase) { setArticles([]); setLoading(false); return }
@@ -136,8 +154,12 @@ export default function HomePage() {
       } else {
         setConfiguredSources((sourceResult.data ?? []).map((source) => source.name).filter(Boolean))
       }
-      // 客户端排序：核心期刊优先 -> 引用数降序 -> 发布时间降序
+      // 客户端排序：发布时间降序 -> 核心期刊优先 -> 引用数降序
       const sorted = (data ?? []).sort((a, b) => {
+        const ta = a.published_at ? new Date(a.published_at).getTime() : 0
+        const tb = b.published_at ? new Date(b.published_at).getTime() : 0
+        if (tb !== ta) return tb - ta
+
         const coreSet = CORE_JOURNAL_NAMES_BY_REGION[region]
         const aCore = coreSet.has(a.source_name)
         const bCore = coreSet.has(b.source_name)
@@ -145,15 +167,31 @@ export default function HomePage() {
 
         const ca = (a as any).cited_by_count ?? 0
         const cb = (b as any).cited_by_count ?? 0
-        if (cb !== ca) return cb - ca
-        const ta = a.published_at ? new Date(a.published_at).getTime() : 0
-        const tb = b.published_at ? new Date(b.published_at).getTime() : 0
-        return tb - ta
+        return cb - ca
       })
       setArticles(sorted)
       setLoading(false)
     })
   }, [module, region])
+
+  useEffect(() => {
+    if (!supabase) return
+    try {
+      const deviceId = getBookmarkDeviceId()
+      bookmarkDeviceIdRef.current = deviceId
+      for (const articleId of bookmarks) {
+        void supabase.rpc('set_article_saved', {
+          p_device_id: deviceId,
+          p_article_id: articleId,
+          p_saved: true,
+        }).then(({ error }) => {
+          if (error) console.error('Supabase bookmark sync error:', error)
+        })
+      }
+    } catch (error) {
+      console.error('Bookmark device initialization error:', error)
+    }
+  }, [])
 
   useEffect(() => {
     if (!showFavorites) return
@@ -199,14 +237,28 @@ export default function HomePage() {
   }, [sourceDropdownOpen])
 
   const toggleBookmark = (id: string) => {
-    setBookmarks((prev) => {
-      const next = new Set(prev)
-      const wasBookmarked = next.has(id)
-      if (wasBookmarked) next.delete(id)
-      else next.add(id)
-      try { localStorage.setItem('bookmarks', JSON.stringify(Array.from(next))) } catch {}
-      return next
-    })
+    const next = new Set(bookmarks)
+    const shouldSave = !next.has(id)
+    if (shouldSave) next.add(id)
+    else next.delete(id)
+    setBookmarks(next)
+    try { localStorage.setItem('bookmarks', JSON.stringify(Array.from(next))) } catch {}
+
+    const deviceId = bookmarkDeviceIdRef.current
+    if (supabase && deviceId) {
+      void supabase.rpc('set_article_saved', {
+        p_device_id: deviceId,
+        p_article_id: id,
+        p_saved: shouldSave,
+      }).then(({ error }) => {
+        if (error) console.error('Supabase bookmark sync error:', error)
+      })
+    }
+  }
+
+  const changeDisplayLanguage = (language: DisplayLanguage) => {
+    setDisplayLanguage(language)
+    try { localStorage.setItem(DISPLAY_LANGUAGE_KEY, language) } catch {}
   }
 
   // 侧边栏：统计每个主题在当前列表中的文章数
@@ -430,13 +482,42 @@ export default function HomePage() {
           </aside>
 
           {/* 主内容区 */}
-          <div className="flex-1 min-w-0">
+          <div className="w-full min-w-0 flex-1">
             <TabBar
               module={module}
               region={region}
               onModuleChange={(m) => { setModule(m); setPage(1) }}
               onRegionChange={(r) => { setRegion(r); setPage(1) }}
             />
+
+            {!loading && (
+              <div className="mt-4 flex w-full justify-start sm:justify-end">
+                <div
+                  className="inline-flex h-8 items-center rounded-md border border-gray-200 bg-white p-0.5"
+                  role="group"
+                  aria-label="文献显示语言"
+                >
+                  {([
+                    ['zh', '中文'],
+                    ['en', 'English'],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => changeDisplayLanguage(value)}
+                      aria-pressed={displayLanguage === value}
+                      className={`h-7 min-w-[4.25rem] rounded px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                        displayLanguage === value
+                          ? 'bg-gray-900 text-white'
+                          : 'text-gray-500 hover:bg-gray-100 hover:text-gray-800'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
@@ -449,16 +530,16 @@ export default function HomePage() {
             )}
 
             {!loading && articles.length > 0 && !showFavorites && (
-              <div className="mt-4 flex gap-2">
+              <div className="mt-4 flex flex-col gap-2 sm:flex-row">
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                   placeholder="搜索标题或摘要…"
-                  className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-400"
+                  className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-400"
                 />
                 {sources.length > 1 && (
-                  <div ref={sourceDropdownRef} className="relative w-36 sm:w-48 max-w-[42vw]">
+                  <div ref={sourceDropdownRef} className="relative w-full sm:w-48">
                     <button
                       type="button"
                       onClick={() => setSourceDropdownOpen((v) => !v)}
@@ -532,6 +613,7 @@ export default function HomePage() {
                     article={a}
                     bookmarked={bookmarks.has(a.id)}
                     onToggleBookmark={toggleBookmark}
+                    language={displayLanguage}
                   />
                 ))
               )}
