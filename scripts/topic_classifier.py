@@ -3,6 +3,8 @@
 供 fetch_journals.py 和 backfill_2026.py 共用
 """
 
+from __future__ import annotations
+
 import re
 
 # 主题规则：(标签, 关键词正则)

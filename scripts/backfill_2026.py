@@ -5,6 +5,8 @@
   SUPABASE_URL=... SUPABASE_KEY=... OPENALEX_EMAIL=... python scripts/backfill_2026.py
 """
 
+from __future__ import annotations
+
 import os
 import re
 import time
@@ -25,11 +27,16 @@ JOURNALS = [
     # 期刊论文 - 国际
     {"name": "Early Childhood Research Quarterly",         "module": "research_frontier", "filter": None},
     {"name": "Child Development",                          "module": "research_frontier", "filter": None},
+    {"name": "Child Development Perspectives",             "module": "research_frontier", "filter": None, "openalex_id": "S79535635"},
     {"name": "Developmental Science",                      "module": "research_frontier", "filter": None},
     {"name": "Early Childhood Education Journal",          "module": "research_frontier", "filter": None},
     {"name": "International Journal of Early Childhood",   "module": "research_frontier", "filter": None},
     {"name": "Journal of Research in Childhood Education", "module": "research_frontier", "filter": None},
     {"name": "Early Education and Development",            "module": "research_frontier", "filter": None},
+    {"name": "Infant and Child Development",                "module": "research_frontier", "filter": None, "openalex_id": "S90519018"},
+    {"name": "Early Child Development and Care",            "module": "research_frontier", "filter": None, "openalex_id": "S145930022"},
+    {"name": "Early Years",                                 "module": "research_frontier", "filter": None, "openalex_id": "S132976789"},
+    {"name": "Infant Behavior & Development",               "module": "research_frontier", "filter": None, "openalex_id": "S67039580"},
     {"name": "Journal of Children and Media",              "module": "research_frontier", "filter": None},
     {"name": "Journal of Early Childhood Literacy",         "module": "research_frontier", "filter": None},
     {"name": "Topics in Early Childhood Special Education", "module": "research_frontier", "filter": None},
@@ -44,17 +51,37 @@ JOURNALS = [
     {"name": "Childhood Education",                        "module": "research_practice", "filter": None},
     {"name": "Journal of Early Childhood Teacher Education", "module": "research_practice", "filter": None},
     {"name": "European Early Childhood Education Research Journal", "module": "research_practice", "filter": None},
+    # 期刊论文 - 国内（CNKI RSS 失效后改用 OpenAlex）
+    {"name": "学前教育研究", "module": "research_frontier", "region": "domestic", "filter": None, "openalex_id": "S4306547182"},
+    {"name": "心理发展与教育", "module": "research_frontier", "region": "domestic", "filter": r"学前|幼儿|幼儿园|早期教育|托育|婴幼儿", "openalex_id": "S4306548924"},
+    {"name": "教师教育研究", "module": "research_frontier", "region": "domestic", "filter": r"学前|幼儿|幼儿园|早期教育|托育|婴幼儿", "openalex_id": "S4306549549"},
+    {"name": "比较教育研究", "module": "research_frontier", "region": "domestic", "filter": r"学前|幼儿|幼儿园|早期教育|托育|婴幼儿", "openalex_id": "S4306553084"},
 ]
 
 
-def get_journal_id(name: str) -> str | None:
-    params = {"search": name, "filter": "type:journal"}
+def get_journal_id(name: str, configured_id: str | None = None) -> str | None:
+    if configured_id:
+        return configured_id
+
+    params = {
+        "search": name,
+        "filter": "type:journal",
+        "per-page": 50,
+        "select": "id,display_name",
+    }
     if OPENALEX_EMAIL:
         params["mailto"] = OPENALEX_EMAIL
     try:
         resp = requests.get("https://api.openalex.org/sources", params=params, timeout=10)
+        resp.raise_for_status()
         results = resp.json().get("results", [])
-        return results[0]["id"] if results else None
+        expected = name.casefold()
+        exact = next(
+            (item for item in results if (item.get("display_name") or "").casefold() == expected),
+            None,
+        )
+        match = exact or (results[0] if results else None)
+        return match.get("id") if match else None
     except Exception as e:
         print(f"  [ERR] 查询期刊ID失败 {name}: {e}")
         return None
@@ -100,7 +127,7 @@ def fetch_all_papers(journal: dict, journal_id: str) -> list[dict]:
 
         page_num += 1
         for w in works:
-            title = w.get("title", "")
+            title = w.get("title") or ""
             abstract = decode_inverted_index(w.get("abstract_inverted_index"))
             doi = w.get("doi", "")
             url = (
@@ -116,7 +143,7 @@ def fetch_all_papers(journal: dict, journal_id: str) -> list[dict]:
             ]
             cited_by_count = w.get("cited_by_count", 0) or 0
 
-            if journal["filter"] and not re.search(
+            if journal.get("filter") and not re.search(
                 journal["filter"], title + (abstract or ""), re.IGNORECASE
             ):
                 continue
@@ -131,7 +158,7 @@ def fetch_all_papers(journal: dict, journal_id: str) -> list[dict]:
                 "source_url": url,
                 "doi": doi or None,
                 "module": journal["module"],
-                "region": "international",
+                "region": journal.get("region", "international"),
                 "published_at": pub_date,
                 "cited_by_count": cited_by_count,
                 "topic_tags": classify_topics(title, abstract),
@@ -171,7 +198,7 @@ def run():
     total = 0
     for journal in JOURNALS:
         print(f"\n>>> {journal['name']} ({journal['module']})")
-        jid = get_journal_id(journal["name"])
+        jid = get_journal_id(journal["name"], journal.get("openalex_id"))
         if not jid:
             print("    [SKIP] 找不到期刊 ID")
             continue

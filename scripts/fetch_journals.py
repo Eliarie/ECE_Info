@@ -3,6 +3,8 @@ OpenAlex + RSS 抓取脚本
 覆盖所有国际学术期刊和国内知网RSS
 """
 
+from __future__ import annotations
+
 import os
 import re
 import time
@@ -22,11 +24,16 @@ OPENALEX_EMAIL = os.environ.get("OPENALEX_EMAIL", "")  # 可选，加了速率�
 OPENALEX_JOURNALS = [
     {"name": "Early Childhood Research Quarterly",          "module": "research_frontier", "filter": None},
     {"name": "Child Development",                           "module": "research_frontier", "filter": None},
+    {"name": "Child Development Perspectives",              "module": "research_frontier", "filter": None, "openalex_id": "S79535635"},
     {"name": "Developmental Science",                       "module": "research_frontier", "filter": None},
     {"name": "Early Childhood Education Journal",           "module": "research_frontier", "filter": None},
     {"name": "International Journal of Early Childhood",    "module": "research_frontier", "filter": None},
     {"name": "Journal of Research in Childhood Education",  "module": "research_frontier", "filter": None},
     {"name": "Early Education and Development",             "module": "research_frontier", "filter": None},
+    {"name": "Infant and Child Development",                 "module": "research_frontier", "filter": None, "openalex_id": "S90519018"},
+    {"name": "Early Child Development and Care",             "module": "research_frontier", "filter": None, "openalex_id": "S145930022"},
+    {"name": "Early Years",                                  "module": "research_frontier", "filter": None, "openalex_id": "S132976789"},
+    {"name": "Infant Behavior & Development",                "module": "research_frontier", "filter": None, "openalex_id": "S67039580"},
     {"name": "Young Children",                              "module": "research_practice", "filter": None},
     {"name": "Childhood Education",                         "module": "research_practice", "filter": None},
     {"name": "Journal of Early Childhood Teacher Education","module": "research_practice", "filter": None},
@@ -43,9 +50,16 @@ OPENALEX_JOURNALS = [
     {"name": "Teaching and Teacher Education",              "module": "research_frontier", "filter": r"early childhood|preschool|kindergarten|young children"},
 ]
 
+# 国内期刊：CNKI RSS 已失效，使用 OpenAlex 精确来源 ID 抓取。
+OPENALEX_DOMESTIC_JOURNALS = [
+    {"name": "学前教育研究", "module": "research_frontier", "region": "domestic", "filter": None, "openalex_id": "S4306547182"},
+    {"name": "心理发展与教育", "module": "research_frontier", "region": "domestic", "filter": r"学前|幼儿|幼儿园|早期教育|托育|婴幼儿", "openalex_id": "S4306548924"},
+    {"name": "教师教育研究", "module": "research_frontier", "region": "domestic", "filter": r"学前|幼儿|幼儿园|早期教育|托育|婴幼儿", "openalex_id": "S4306549549"},
+    {"name": "比较教育研究", "module": "research_frontier", "region": "domestic", "filter": r"学前|幼儿|幼儿园|早期教育|托育|婴幼儿", "openalex_id": "S4306553084"},
+]
+
 # 国内知网RSS（需要关键词过滤的单独标注）
 CNKI_RSS_SOURCES = [
-    {"name": "学前教育研究", "url": "https://www.cnki.net/kns/rss.aspx?journal=XQJY", "filter": None},
     {"name": "幼儿教育",     "url": "https://www.cnki.net/kns/rss.aspx?journal=YEJY", "filter": None},
     {"name": "教育研究",     "url": "https://www.cnki.net/kns/rss.aspx?journal=JYYJ", "filter": r"学前|幼儿|幼儿园|早期教育"},
     {"name": "全球教育展望", "url": "https://www.cnki.net/kns/rss.aspx?journal=WGJN", "filter": r"学前|幼儿|幼儿园|早期教育"},
@@ -78,24 +92,37 @@ def ensure_articles_table() -> bool:
         raise
 
 
-def get_openalex_journal_id(journal_name: str) -> str | None:
+def get_openalex_journal_id(journal_name: str, configured_id: str | None = None) -> str | None:
     """通过期刊名查询OpenAlex的source ID"""
-    params = {"search": journal_name, "filter": "type:journal"}
+    if configured_id:
+        return configured_id
+
+    params = {
+        "search": journal_name,
+        "filter": "type:journal",
+        "per-page": 50,
+        "select": "id,display_name",
+    }
     if OPENALEX_EMAIL:
         params["mailto"] = OPENALEX_EMAIL
     resp = requests.get("https://api.openalex.org/sources", params=params, timeout=10)
+    resp.raise_for_status()
     data = resp.json()
     results = data.get("results", [])
-    if results:
-        return results[0]["id"]  # 返回第一个匹配的ID
-    return None
+    expected = journal_name.casefold()
+    exact = next(
+        (item for item in results if (item.get("display_name") or "").casefold() == expected),
+        None,
+    )
+    match = exact or (results[0] if results else None)
+    return match.get("id") if match else None
 
 
 def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
     """从OpenAlex抓取指定期刊最近N天的论文"""
     since_date = (datetime.now(timezone.utc) - timedelta(days=days_back)).strftime("%Y-%m-%d")
 
-    journal_id = get_openalex_journal_id(journal["name"])
+    journal_id = get_openalex_journal_id(journal["name"], journal.get("openalex_id"))
     if not journal_id:
         print(f"[WARN] 找不到期刊: {journal['name']}")
         return []
@@ -114,16 +141,17 @@ def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
 
     articles = []
     for w in works:
-        title = w.get("title", "")
+        title = w.get("title") or ""
         abstract = _decode_inverted_index(w.get("abstract_inverted_index"))
-        doi = w.get("doi", "")
-        url = f"https://doi.org/{doi.replace('https://doi.org/', '')}" if doi else w.get("primary_location", {}).get("landing_page_url", "")
+        doi = w.get("doi") or ""
+        primary_location = w.get("primary_location") or {}
+        url = f"https://doi.org/{doi.replace('https://doi.org/', '')}" if doi else primary_location.get("landing_page_url", "")
         pub_date = w.get("publication_date")
         authors = [a["author"]["display_name"] for a in w.get("authorships", []) if a.get("author")]
         cited_by_count = w.get("cited_by_count", 0) or 0
 
         # 关键词过滤（教育技术类期刊）
-        if journal["filter"] and not re.search(journal["filter"], title + (abstract or ""), re.IGNORECASE):
+        if journal.get("filter") and not re.search(journal["filter"], title + (abstract or ""), re.IGNORECASE):
             continue
 
         if not title or not url:
@@ -137,7 +165,7 @@ def fetch_openalex_papers(journal: dict, days_back: int = 7) -> list[dict]:
             "source_url": url,
             "doi": doi,
             "module": journal["module"],
-            "region": "international",
+            "region": journal.get("region", "international"),
             "published_at": pub_date,
             "cited_by_count": cited_by_count,
             "topic_tags": classify_topics(title, abstract),
@@ -163,9 +191,9 @@ def fetch_rss(source: dict, region: str, module: str) -> list[dict]:
     feed = feedparser.parse(source["url"])
     articles = []
     for entry in feed.entries:
-        title = entry.get("title", "")
-        abstract = entry.get("summary", "") or entry.get("description", "")
-        url = entry.get("link", "")
+        title = entry.get("title") or ""
+        abstract = entry.get("summary") or entry.get("description") or ""
+        url = entry.get("link") or ""
         pub_date = entry.get("published", entry.get("updated", ""))
 
         # 关键词过滤
@@ -206,9 +234,9 @@ def run():
 
     total = 0
 
-    # 1. OpenAlex 国际期刊
-    print("=== 抓取 OpenAlex 国际期刊 ===")
-    for journal in OPENALEX_JOURNALS:
+    # 1. OpenAlex 国内外期刊
+    print("=== 抓取 OpenAlex 国内外期刊 ===")
+    for journal in [*OPENALEX_JOURNALS, *OPENALEX_DOMESTIC_JOURNALS]:
         print(f"  {journal['name']}...")
         articles = fetch_openalex_papers(journal, days_back=7)
         save_articles(articles)

@@ -46,12 +46,18 @@ INSERT INTO sources (name, url, type, module, region, config) VALUES
 -- 国际学术期刊（通过OpenAlex API抓取）
 ('Early Childhood Research Quarterly', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Early Childhood Research Quarterly"}'),
 ('Child Development', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Child Development"}'),
+('Child Development Perspectives', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Child Development Perspectives", "openalex_id": "S79535635"}'),
 ('Developmental Science', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Developmental Science"}'),
 ('Early Childhood Education Journal', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Early Childhood Education Journal"}'),
 ('International Journal of Early Childhood', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "International Journal of Early Childhood"}'),
 ('Journal of Research in Childhood Education', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Journal of Research in Childhood Education"}'),
 ('Early Education and Development', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Early Education and Development"}'),
+('Infant and Child Development', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Infant and Child Development", "openalex_id": "S90519018"}'),
+('Early Child Development and Care', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Early Child Development and Care", "openalex_id": "S145930022"}'),
+('Early Years', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Early Years", "openalex_id": "S132976789"}'),
+('Infant Behavior & Development', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Infant Behavior & Development", "openalex_id": "S67039580"}'),
 ('Young Children', 'https://api.openalex.org/works', 'openalex', 'research_practice', 'international', '{"journal_name": "Young Children"}'),
+('European Early Childhood Education Research Journal', 'https://api.openalex.org/works', 'openalex', 'research_practice', 'international', '{"journal_name": "European Early Childhood Education Research Journal"}'),
 ('Computers & Education', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Computers & Education", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
 ('British Journal of Educational Technology', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "British Journal of Educational Technology", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
 ('Journal of Computer Assisted Learning', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Journal of Computer Assisted Learning", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
@@ -63,8 +69,11 @@ INSERT INTO sources (name, url, type, module, region, config) VALUES
 ('Educational Researcher', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Educational Researcher", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
 ('Teaching and Teacher Education', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'international', '{"journal_name": "Teaching and Teacher Education", "keyword_filter": "early childhood|preschool|kindergarten|young children"}'),
 
--- 国内学术期刊（知网RSS）
-('学前教育研究', 'https://www.cnki.net/kns/rss.aspx?journal=XQJY', 'rss', 'research_frontier', 'domestic', '{}'),
+-- 国内学术期刊（OpenAlex + 知网 RSS）
+('学前教育研究', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'domestic', '{"journal_name": "学前教育研究", "openalex_id": "S4306547182"}'),
+('心理发展与教育', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'domestic', '{"journal_name": "心理发展与教育", "openalex_id": "S4306548924", "keyword_filter": "学前|幼儿|幼儿园|早期教育|托育|婴幼儿"}'),
+('教师教育研究', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'domestic', '{"journal_name": "教师教育研究", "openalex_id": "S4306549549", "keyword_filter": "学前|幼儿|幼儿园|早期教育|托育|婴幼儿"}'),
+('比较教育研究', 'https://api.openalex.org/works', 'openalex', 'research_frontier', 'domestic', '{"journal_name": "比较教育研究", "openalex_id": "S4306553084", "keyword_filter": "学前|幼儿|幼儿园|早期教育|托育|婴幼儿"}'),
 ('幼儿教育', 'https://www.cnki.net/kns/rss.aspx?journal=YEJY', 'rss', 'research_frontier', 'domestic', '{}'),
 ('教育研究', 'https://www.cnki.net/kns/rss.aspx?journal=JYYJ', 'rss', 'research_frontier', 'domestic', '{"keyword_filter": "学前|幼儿|幼儿园|早期教育"}'),
 ('全球教育展望', 'https://www.cnki.net/kns/rss.aspx?journal=WGJN', 'rss', 'research_frontier', 'domestic', '{"keyword_filter": "学前|幼儿|幼儿园|早期教育"}'),

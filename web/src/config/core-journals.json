@@ -14,6 +14,9 @@
   ],
   "domestic": [
     "学前教育研究",
+    "心理发展与教育",
+    "教师教育研究",
+    "比较教育研究",
     "电化教育研究",
     "中国电化教育",
     "教育研究",
@@ -21,5 +24,13 @@
     "开放教育研究",
     "幼儿教育"
   ],
-  "international": []
+  "international": [
+    "Child Development Perspectives",
+    "Journal of Early Childhood Literacy",
+    "Infant and Child Development",
+    "European Early Childhood Education Research Journal",
+    "Early Child Development and Care",
+    "Early Years",
+    "Infant Behavior & Development"
+  ]
 }

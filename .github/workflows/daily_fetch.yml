@@ -45,6 +45,13 @@ jobs:
               sys.exit(1)
           PY
 
+      - name: 同步期刊来源
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          OPENALEX_EMAIL: ${{ secrets.OPENALEX_EMAIL }}
+        run: python scripts/sync_journal_sources.py
+
       - name: 抓取学术期刊
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
