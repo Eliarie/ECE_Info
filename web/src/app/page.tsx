@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
 import Pagination from '@/components/Pagination'
+import { getTopicLabel, TOPICS, UI_TEXT } from '@/lib/i18n'
 import type { Article, DisplayLanguage, Module, Region } from '@/lib/types'
 import coreJournals from '@/config/core-journals.json'
 
@@ -67,20 +68,6 @@ const getBookmarkDeviceId = () => {
   return deviceId
 }
 
-// 所有可能的主题标签（与 topic_classifier.py 保持一致）
-const ALL_TOPICS = [
-  '数字教育',
-  '儿童发展',
-  '教学与学习',
-  '教师教育',
-  '课程',
-  '游戏',
-  '家庭与社区',
-  '特殊教育',
-  '教育政策',
-  '研究方法与理论',
-]
-
 export default function HomePage() {
   const [module, setModule] = useState<Module>('research_frontier')
   const [region, setRegion] = useState<Region>('international')
@@ -95,7 +82,9 @@ export default function HomePage() {
   const [favoriteArticles, setFavoriteArticles] = useState<Article[]>([])
   const [favoritesLoading, setFavoritesLoading] = useState(false)
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false)
+  const [topicsOpen, setTopicsOpen] = useState(false)
   const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
+  const text = UI_TEXT[displayLanguage]
   const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
   const bookmarkDeviceIdRef = useRef<string | null>(null)
   const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
@@ -114,11 +103,17 @@ export default function HomePage() {
   }, [])
 
   useEffect(() => {
+    document.documentElement.lang = displayLanguage === 'zh' ? 'zh-CN' : 'en'
+    document.title = text.brand
+  }, [displayLanguage, text.brand])
+
+  useEffect(() => {
     if (!supabase) { setArticles([]); setLoading(false); return }
     setLoading(true)
     setSearch('')
     setSourceFilter('')
     setSourceDropdownOpen(false)
+    setTopicsOpen(false)
     setPage(1)
     setActiveTopic(null)
     const articlesRequest = supabase
@@ -316,6 +311,7 @@ export default function HomePage() {
 
   const enterFavorites = () => {
     setShowFavorites(true)
+    setTopicsOpen(false)
     setActiveTopic(null)
     setSourceFilter('')
     setSearch('')
@@ -330,115 +326,167 @@ export default function HomePage() {
 
   const handleTopicClick = (t: string) => {
     setActiveTopic((prev) => (prev === t ? null : t))
+    setTopicsOpen(false)
     setPage(1)
     setShowFavorites(false)
   }
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="border-b border-gray-200 bg-white" aria-label="页面工具">
-        <div className="mx-auto flex h-11 max-w-5xl items-center justify-end px-4">
-          {!loading && (
-            <div className="flex items-center gap-2">
-              <span className="hidden text-xs text-gray-400 sm:inline">阅读语言</span>
-              <div
-                className="inline-flex h-8 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5"
-                role="group"
-                aria-label="文献显示语言"
+      <nav className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur" aria-label={text.mainNavigation}>
+        <div className="mx-auto flex min-h-14 max-w-5xl items-center gap-3 px-4 py-2 sm:min-h-16">
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg">
+              <span className="sm:hidden">{text.brandCompact}</span>
+              <span className="hidden sm:inline">{text.brand}</span>
+            </h1>
+            <p className="mt-0.5 hidden truncate text-xs text-gray-500 lg:block">
+              {text.subtitle}
+            </p>
+          </div>
+
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                if (showFavorites) exitFavorites()
+                else enterFavorites()
+              }}
+              aria-pressed={showFavorites}
+              aria-label={showFavorites ? text.backToArticles : text.viewFavorites(bookmarks.size)}
+              title={showFavorites ? text.backToArticles : text.favorites}
+              className={`flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3 ${
+                showFavorites
+                  ? 'border-amber-200 bg-amber-50 text-amber-700'
+                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              <svg
+                aria-hidden="true"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill={showFavorites ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2"
               >
-                {([
-                  ['zh', '中文'],
-                  ['en', 'English'],
-                ] as const).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => changeDisplayLanguage(value)}
-                    aria-pressed={displayLanguage === value}
-                    className={`h-7 min-w-[4.25rem] rounded px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                      displayLanguage === value
-                        ? 'bg-gray-900 text-white shadow-sm'
-                        : 'text-gray-500 hover:bg-white hover:text-gray-800'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+              <span className="hidden sm:inline">{text.favorites}</span>
+              {bookmarks.size > 0 && (
+                <span className={`min-w-4 text-center text-[11px] ${showFavorites ? 'text-amber-700' : 'text-gray-400'}`}>
+                  {bookmarks.size}
+                </span>
+              )}
+            </button>
+
+            <div
+              className="inline-flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5"
+              role="group"
+              aria-label={text.interfaceLanguage}
+            >
+              {([
+                ['zh', '中文', '中'],
+                ['en', 'English', 'EN'],
+              ] as const).map(([value, label, compactLabel]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => changeDisplayLanguage(value)}
+                  aria-pressed={displayLanguage === value}
+                  aria-label={text.useLanguage(label)}
+                  className={`h-8 min-w-10 rounded px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:min-w-[4.25rem] ${
+                    displayLanguage === value
+                      ? 'bg-gray-900 text-white shadow-sm'
+                      : 'text-gray-500 hover:bg-white hover:text-gray-800'
+                  }`}
+                >
+                  <span className="sm:hidden">{compactLabel}</span>
+                  <span className="hidden sm:inline">{label}</span>
+                </button>
+              ))}
             </div>
-          )}
+          </div>
         </div>
       </nav>
 
-      <div className="max-w-5xl mx-auto px-4 py-5 lg:py-6">
-        <header className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900">学前教育前沿</h1>
-          <p className="text-sm text-gray-500 mt-1">每日自动抓取国内外学术期刊、政策文件与研究动态</p>
-        </header>
-
+      <div className="mx-auto max-w-5xl px-4 py-4 sm:py-5 lg:py-6">
         <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
-          {/* 主题目录：手机/平板横向滚动，大屏左侧竖排 */}
+          {/* 主题目录：手机/平板折叠菜单，大屏左侧竖排 */}
           <aside className="lg:w-44 lg:flex-shrink-0">
-            <div className="lg:sticky lg:top-8">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3 hidden lg:block">主题分类</p>
-              {/* 手机/平板：带阴影的横向滚动条 + 收藏单独一行 */}
-              <div className="lg:hidden -mx-4 px-4 bg-white shadow-sm border-b border-gray-100">
-                {/* 收藏行 */}
-                <div className="flex items-center justify-between py-1.5 border-b border-gray-100">
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        if (showFavorites) exitFavorites()
-                        else enterFavorites()
-                      }}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs transition-colors ${
-                        showFavorites ? 'bg-amber-100 text-amber-700' : 'text-gray-500 hover:bg-gray-100'
-                      }`}
+            <div className="lg:sticky lg:top-24">
+              <p className="mb-3 hidden text-xs font-semibold uppercase tracking-wide text-gray-400 lg:block">
+                {text.topicCategory}
+              </p>
+              {/* 手机/平板：默认收起的主题菜单 */}
+              {!showFavorites && (
+                <div className="-mx-4 border-b border-gray-100 bg-white px-4 py-2 shadow-sm lg:hidden">
+                  <button
+                    type="button"
+                    onClick={() => setTopicsOpen((open) => !open)}
+                    aria-expanded={topicsOpen}
+                    aria-controls="mobile-topic-navigation"
+                    aria-label={topicsOpen ? text.hideTopics : text.showTopics}
+                    className="flex min-h-10 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  >
+                    <span className="font-medium">{text.topicCategory}</span>
+                    <span className="min-w-0 flex-1 truncate text-right text-xs text-gray-400">
+                      {activeTopic ? getTopicLabel(activeTopic, displayLanguage) : text.all}
+                    </span>
+                    <svg
+                      aria-hidden="true"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      className={`flex-shrink-0 transition-transform ${topicsOpen ? 'rotate-180' : ''}`}
                     >
-                      <svg width="11" height="11" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                      </svg>
-                      我的收藏{bookmarks.size > 0 ? `（${bookmarks.size}）` : ''}
-                    </button>
-                    {showFavorites && (
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
+
+                  {topicsOpen && (
+                    <nav id="mobile-topic-navigation" className="grid grid-cols-2 gap-1.5 pt-2" aria-label={text.topicCategory}>
                       <button
                         type="button"
-                        onClick={exitFavorites}
-                        className="px-2 py-1 rounded-full text-xs text-gray-600 hover:bg-gray-100"
+                        onClick={() => {
+                          setActiveTopic(null)
+                          setPage(1)
+                          setShowFavorites(false)
+                          setTopicsOpen(false)
+                        }}
+                        className={`flex min-h-10 items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs transition-colors ${
+                          activeTopic === null
+                            ? 'bg-gray-900 text-white'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }`}
                       >
-                        ← 返回
+                        <span>{text.all}</span>
+                        <span className={activeTopic === null ? 'text-gray-300' : 'text-gray-400'}>{articles.length}</span>
                       </button>
-                    )}
-                  </div>
-                  {bookmarks.size === 0 && !showFavorites && <span className="text-xs text-gray-400">点击文章右上角书签收藏</span>}
+                      {TOPICS.map(({ key }) => ({ t: key, count: topicCounts.get(key) ?? 0 })).map(({ t, count }) => (
+                        <button
+                          key={t}
+                          type="button"
+                          onClick={() => handleTopicClick(t)}
+                          className={`flex min-h-10 items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-left text-xs leading-snug transition-colors ${
+                            activeTopic === t
+                              ? 'bg-gray-900 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <span className="min-w-0">{getTopicLabel(t, displayLanguage)}</span>
+                          <span className={`flex-shrink-0 ${activeTopic === t ? 'text-gray-300' : 'text-gray-400'}`}>
+                            {count}
+                          </span>
+                        </button>
+                      ))}
+                    </nav>
+                  )}
                 </div>
-                {/* 主题标签行 */}
-                {!showFavorites && (
-                <nav className="flex flex-row gap-1.5 overflow-x-auto py-2 scrollbar-hide">
-                  <button
-                    onClick={() => { setActiveTopic(null); setPage(1); setShowFavorites(false) }}
-                    className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors whitespace-nowrap ${
-                      activeTopic === null && !showFavorites
-                        ? 'bg-gray-900 text-white'
-                        : 'bg-gray-100 text-gray-700'
-                    }`}
-                  >
-                    全部 {articles.length}
-                  </button>
-                  {ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).map(({ t, count }) => (
-                    <button
-                      key={t}
-                      onClick={() => handleTopicClick(t)}
-                      className={`flex-shrink-0 px-2.5 py-1 rounded-full text-xs transition-colors whitespace-nowrap ${
-                        activeTopic === t ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'
-                      }`}
-                    >
-                      {t} {count}
-                    </button>
-                  ))}
-                </nav>
-                )}
-              </div>
+              )}
               {/* 大屏竖排 */}
               {!showFavorites && (
               <nav className="hidden lg:flex lg:flex-col lg:space-y-0.5">
@@ -450,12 +498,12 @@ export default function HomePage() {
                       : 'text-gray-700 hover:bg-gray-100'
                   }`}
                 >
-                  <span>全部</span>
+                  <span>{text.all}</span>
                   <span className={`text-xs ${activeTopic === null && !showFavorites ? 'text-gray-300' : 'text-gray-400'}`}>
                     {articles.length}
                   </span>
                 </button>
-                {ALL_TOPICS.map((t) => ({ t, count: topicCounts.get(t) ?? 0 })).map(({ t, count }) => {
+                {TOPICS.map(({ key }) => ({ t: key, count: topicCounts.get(key) ?? 0 })).map(({ t, count }) => {
                   const isActive = activeTopic === t
                   return (
                     <button
@@ -465,7 +513,7 @@ export default function HomePage() {
                         isActive ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
-                      <span className="min-w-0 leading-snug">{t}</span>
+                      <span className="min-w-0 leading-snug">{getTopicLabel(t, displayLanguage)}</span>
                       <span className={`ml-1 text-xs flex-shrink-0 ${isActive ? 'text-gray-300' : 'text-gray-400'}`}>
                         {count > 0 ? count : '—'}
                       </span>
@@ -474,37 +522,6 @@ export default function HomePage() {
                 })}
               </nav>
               )}
-
-              <div className="hidden lg:block mt-6 border-t border-gray-200 pt-4">
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      if (showFavorites) exitFavorites()
-                      else enterFavorites()
-                    }}
-                    className={`flex-1 text-left px-3 py-1.5 rounded-lg text-sm transition-colors flex items-center gap-2 ${
-                      showFavorites ? 'bg-amber-50 text-amber-700' : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill={showFavorites ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
-                      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                    </svg>
-                    <span>收藏</span>
-                    {bookmarks.size > 0 && (
-                      <span className="ml-auto text-xs text-gray-400">{bookmarks.size}</span>
-                    )}
-                  </button>
-                  {showFavorites && (
-                    <button
-                      type="button"
-                      onClick={exitFavorites}
-                      className="px-3 py-1.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100"
-                    >
-                      ← 返回
-                    </button>
-                  )}
-                </div>
-              </div>
             </div>
           </aside>
 
@@ -513,17 +530,15 @@ export default function HomePage() {
             <TabBar
               module={module}
               region={region}
+              language={displayLanguage}
               onModuleChange={(m) => { setModule(m); setPage(1) }}
               onRegionChange={(r) => { setRegion(r); setPage(1) }}
             />
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                <p className="font-medium">缺少前端环境变量，暂时无法读取数据。</p>
-                <p className="mt-2">
-                  请在 web 目录创建 .env.local，并填写 NEXT_PUBLIC_SUPABASE_URL 和
-                  NEXT_PUBLIC_SUPABASE_ANON_KEY，然后重启 npm run dev。
-                </p>
+                <p className="font-medium">{text.missingEnvTitle}</p>
+                <p className="mt-2">{text.missingEnvBody}</p>
               </div>
             )}
 
@@ -533,7 +548,7 @@ export default function HomePage() {
                   type="text"
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-                  placeholder="搜索标题或摘要…"
+                  placeholder={text.searchPlaceholder}
                   className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-blue-400"
                 />
                 {sources.length > 1 && (
@@ -543,7 +558,7 @@ export default function HomePage() {
                       onClick={() => setSourceDropdownOpen((v) => !v)}
                       className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white text-left truncate focus:outline-none focus:border-blue-400"
                     >
-                      {sourceFilter || '全部来源'}
+                      {sourceFilter || text.allSources}
                     </button>
                     {sourceDropdownOpen && (
                       <div className="absolute z-20 mt-1 right-0 w-64 max-w-[82vw] rounded-lg border border-gray-200 bg-white shadow-lg max-h-56 overflow-y-auto">
@@ -552,7 +567,7 @@ export default function HomePage() {
                           onClick={() => { setSourceFilter(''); setSourceDropdownOpen(false); setPage(1) }}
                           className={`block w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${sourceFilter === '' ? 'text-blue-600' : 'text-gray-700'}`}
                         >
-                          全部来源
+                          {text.allSources}
                         </button>
                         {sources.map((s) => {
                           const count = sourceCounts.get(s) ?? 0
@@ -566,7 +581,7 @@ export default function HomePage() {
                             >
                               <span className="min-w-0 flex-1 truncate">{s}</span>
                               <span className="flex-shrink-0 text-xs text-gray-400">
-                                {count > 0 ? count : '暂无'}
+                                {count > 0 ? count : text.unavailable}
                               </span>
                             </button>
                           )
@@ -580,8 +595,8 @@ export default function HomePage() {
 
             {!loading && !showFavorites && (search || sourceFilter || activeTopic) && (
               <p className="mt-2 text-xs text-gray-400">
-                共 {filtered.length} 条
-                {activeTopic && <span> · {activeTopic}</span>}
+                {text.resultCount(filtered.length)}
+                {activeTopic && <span> · {getTopicLabel(activeTopic, displayLanguage)}</span>}
                 {sourceFilter && <span> · {sourceFilter}</span>}
                 {search && <span> · "{search}"</span>}
               </p>
@@ -589,20 +604,20 @@ export default function HomePage() {
 
             <div className="mt-4 space-y-3">
               {loading ? (
-                <div className="text-center py-16 text-gray-400 text-sm">加载中…</div>
+                <div className="text-center py-16 text-gray-400 text-sm">{text.loading}</div>
               ) : showFavorites && favoritesLoading ? (
-                <div className="text-center py-16 text-gray-400 text-sm">加载收藏中…</div>
+                <div className="text-center py-16 text-gray-400 text-sm">{text.loadingFavorites}</div>
               ) : paginated.length === 0 ? (
                 <div className="text-center py-16 text-gray-400 text-sm">
                   {showFavorites
-                    ? '还没有收藏，点击文章右上角的书签图标收藏。'
+                    ? text.emptyFavorites
                     : sourceFilter
-                    ? `「${sourceFilter}」暂无可用文章。`
+                    ? text.emptySource(sourceFilter)
                     : activeTopic
-                    ? `「${activeTopic}」暂无相关文章。`
+                    ? text.emptyTopic(getTopicLabel(activeTopic, displayLanguage))
                     : articles.length === 0
-                    ? '暂无内容。可先运行抓取任务，或切换国内/国际查看。'
-                    : '没有匹配的结果。'}
+                    ? text.emptyContent
+                    : text.noResults}
                 </div>
               ) : (
                 paginated.map((a) => (
@@ -621,6 +636,7 @@ export default function HomePage() {
               page={page}
               total={filtered.length}
               pageSize={PAGE_SIZE}
+              language={displayLanguage}
               onChange={(p) => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
             />
           </div>

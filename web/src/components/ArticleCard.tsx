@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { UI_TEXT } from '@/lib/i18n'
 import type { Article, DisplayLanguage } from '@/lib/types'
 
 interface Props {
@@ -13,6 +14,7 @@ interface Props {
 export default function ArticleCard({ article, bookmarked, onToggleBookmark, language }: Props) {
   const [expanded, setExpanded] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const text = UI_TEXT[language]
 
   const title = language === 'zh'
     ? article.title_zh || article.title_original
@@ -21,12 +23,12 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark, lan
     ? article.abstract_zh || article.abstract_original
     : article.abstract_original || article.abstract_zh
   const date = article.published_at
-    ? new Date(article.published_at).toLocaleDateString('zh-CN')
+    ? new Date(article.published_at).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US')
     : null
 
   const handleBookmark = () => {
     onToggleBookmark(article.id)
-    const msg = bookmarked ? '已取消收藏' : '已收藏，可在「我的收藏」查看'
+    const msg = bookmarked ? text.unsaved : text.saved
     setToast(msg)
     setTimeout(() => setToast(null), 200)
   }
@@ -46,14 +48,15 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark, lan
         </a>
         <button
           onClick={handleBookmark}
-          title={bookmarked ? '取消收藏' : '收藏'}
+          aria-label={bookmarked ? text.removeBookmark : text.addBookmark}
+          title={bookmarked ? text.removeBookmark : text.addBookmark}
           className={`flex-shrink-0 mt-0.5 p-1 rounded transition-colors ${
             bookmarked
               ? 'text-amber-500 hover:text-amber-600'
               : 'text-gray-300 hover:text-gray-500'
           }`}
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill={bookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill={bookmarked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -63,10 +66,10 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark, lan
         <span>{article.source_name}</span>
         {date && <><span>·</span><span>{date}</span></>}
         {article.authors?.length > 0 && (
-          <><span>·</span><span>{article.authors.slice(0, 2).join(', ')}{article.authors.length > 2 ? ' 等' : ''}</span></>
+          <><span>·</span><span>{article.authors.slice(0, 2).join(', ')}{article.authors.length > 2 ? text.moreAuthors : ''}</span></>
         )}
         {(article.cited_by_count ?? 0) > 0 && (
-          <><span>·</span><span className="text-amber-500 font-medium">引用 {article.cited_by_count}</span></>
+          <><span>·</span><span className="text-amber-500 font-medium">{text.citations} {article.cited_by_count}</span></>
         )}
       </div>
 
@@ -80,12 +83,12 @@ export default function ArticleCard({ article, bookmarked, onToggleBookmark, lan
               onClick={() => setExpanded(!expanded)}
               className="text-xs text-blue-500 mt-1 hover:underline"
             >
-              {expanded ? '收起' : '展开'}
+              {expanded ? text.collapse : text.expand}
             </button>
           )}
         </div>
       ) : (
-        <p className="mt-2 text-xs text-gray-400 italic">摘要未开放，请前往原文查看</p>
+        <p className="mt-2 text-xs text-gray-400 italic">{text.noAbstract}</p>
       )}
     </div>
   )

@@ -1,13 +1,18 @@
 'use client'
 
+import { UI_TEXT } from '@/lib/i18n'
+import type { DisplayLanguage } from '@/lib/types'
+
 interface Props {
   page: number
   total: number
   pageSize: number
+  language: DisplayLanguage
   onChange: (p: number) => void
 }
 
-export default function Pagination({ page, total, pageSize, onChange }: Props) {
+export default function Pagination({ page, total, pageSize, language, onChange }: Props) {
+  const text = UI_TEXT[language]
   const totalPages = Math.ceil(total / pageSize)
   if (totalPages <= 1) return null
 
@@ -27,6 +32,7 @@ export default function Pagination({ page, total, pageSize, onChange }: Props) {
       <button
         disabled={page === 1}
         onClick={() => onChange(page - 1)}
+        aria-label={text.previousPage}
         className="px-2 py-1 text-sm text-gray-500 disabled:opacity-30 hover:text-gray-900"
       >
         ‹
@@ -38,6 +44,8 @@ export default function Pagination({ page, total, pageSize, onChange }: Props) {
           <button
             key={p}
             onClick={() => onChange(p as number)}
+            aria-label={text.pageLabel(p as number)}
+            aria-current={page === p ? 'page' : undefined}
             className={`w-8 h-8 text-sm rounded-lg transition-colors ${
               page === p
                 ? 'bg-gray-900 text-white'
@@ -51,6 +59,7 @@ export default function Pagination({ page, total, pageSize, onChange }: Props) {
       <button
         disabled={page === totalPages}
         onClick={() => onChange(page + 1)}
+        aria-label={text.nextPage}
         className="px-2 py-1 text-sm text-gray-500 disabled:opacity-30 hover:text-gray-900"
       >
         ›
