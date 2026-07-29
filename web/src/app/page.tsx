@@ -552,39 +552,32 @@ export default function HomePage() {
               onRegionChange={(r) => { setRegion(r); setPage(1) }}
             />
 
-            <details className="group mt-2 text-xs text-gray-400">
-              <summary className="ml-auto flex w-fit cursor-pointer list-none items-center gap-1.5 rounded px-1 py-1 transition-colors hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 [&::-webkit-details-marker]:hidden">
-                <svg
-                  aria-hidden="true"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 11v5" />
-                  <path d="M12 8h.01" />
-                </svg>
-                <span>{text.translationNoticeTitle}</span>
-                <svg
-                  aria-hidden="true"
-                  width="13"
-                  height="13"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className="transition-transform group-open:rotate-180"
-                >
-                  <path d="m6 9 6 6 6-6" />
-                </svg>
-              </summary>
-              <p className="ml-auto mt-1 max-w-xl border-r-2 border-gray-200 pr-2 text-right leading-relaxed text-gray-500">
+            <div
+              role="note"
+              aria-label={text.translationNoticeTitle}
+              className="mt-3 flex items-start gap-2 border-l-2 border-amber-300 bg-amber-50/70 px-3 py-2 text-xs leading-relaxed text-amber-900"
+            >
+              <svg
+                aria-hidden="true"
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                className="mt-0.5 flex-shrink-0"
+              >
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 11v5" />
+                <path d="M12 8h.01" />
+              </svg>
+              <p>
+                <span className="font-medium">
+                  {text.translationNoticeTitle}{displayLanguage === 'zh' ? '：' : ': '}
+                </span>
                 {text.translationNotice}
               </p>
-            </details>
+            </div>
 
             {!hasSupabaseEnv && (
               <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">

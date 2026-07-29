@@ -33,7 +33,7 @@ export default function TabBar({ module, region, language, onModuleChange, onReg
           </button>
         ))}
       </div>
-      <div className="flex gap-1 pb-2">
+      <div className="flex gap-3 pb-2 sm:gap-4">
         {REGIONS.map((r) => (
           <button
             key={r}
