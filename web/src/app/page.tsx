@@ -18,9 +18,8 @@ const PAGE_SIZE = 8
 const BOOKMARK_DEVICE_KEY = 'bookmark_device_id'
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 
-// 首页以国内政策库为主；《中华人民共和国学前教育法》作为阅读入口，
-// 其余记录仍按正式发布日期由新到旧排列。
-const PRIMARY_POLICY_TITLE = '中华人民共和国学前教育法'
+// 首页以国内政策库为主；政策列表先显示中央文件，
+// 中央与各省组内均按正式发布日期由新到旧排列。
 const CENTRAL_SCOPE = 'scope:central'
 const PROVINCE_SCOPE_PREFIX = 'scope:province:'
 const PROVINCES = [
@@ -29,9 +28,6 @@ const PROVINCES = [
   '湖北', '湖南', '广东', '广西', '海南', '重庆', '四川', '贵州',
   '云南', '西藏', '陕西', '甘肃', '青海', '宁夏', '新疆',
 ] as const
-
-const isPrimaryPolicy = (article: Article) =>
-  article.title_zh === PRIMARY_POLICY_TITLE || article.title_original === PRIMARY_POLICY_TITLE
 
 const getSourceProvince = (sourceName: string): string | null => {
   const cityProvinceAliases: Record<string, string> = {
@@ -175,13 +171,13 @@ export default function HomePage() {
       } else {
         setConfiguredSources((sourceResult.data ?? []).map((source) => source.name).filter(Boolean))
       }
-      // 国内政策首页固定以《中华人民共和国学前教育法》为首项；
-      // 其他场景按发布时间降序 -> 核心期刊优先 -> 引用数降序。
+      // 国内政策：中央文件整体在前，中央与地方各自按正式发布时间由新到旧。
+      // 其他场景：发布时间降序 -> 核心期刊优先 -> 引用数降序。
       const sorted = (data ?? []).sort((a, b) => {
         if (module === 'policy' && region === 'domestic') {
-          const aPrimary = isPrimaryPolicy(a)
-          const bPrimary = isPrimaryPolicy(b)
-          if (aPrimary !== bPrimary) return aPrimary ? -1 : 1
+          const aCentral = isCentralSource(a.source_name)
+          const bCentral = isCentralSource(b.source_name)
+          if (aCentral !== bCentral) return aCentral ? -1 : 1
         }
 
         const ta = a.published_at ? new Date(a.published_at).getTime() : 0
