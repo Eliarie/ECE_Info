@@ -18,6 +18,12 @@ const PAGE_SIZE = 8
 const BOOKMARK_DEVICE_KEY = 'bookmark_device_id'
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 
+// 首页以国内政策库为主；《中华人民共和国学前教育法》作为阅读入口，
+// 其余记录仍按正式发布日期由新到旧排列。
+const PRIMARY_POLICY_TITLE = '中华人民共和国学前教育法'
+const isPrimaryPolicy = (article: Article) =>
+  article.title_zh === PRIMARY_POLICY_TITLE || article.title_original === PRIMARY_POLICY_TITLE
+
 type CoreJournalConfig = {
   global?: string[]
   domestic?: string[]
@@ -69,8 +75,8 @@ const getBookmarkDeviceId = () => {
 }
 
 export default function HomePage() {
-  const [module, setModule] = useState<Module>('research_frontier')
-  const [region, setRegion] = useState<Region>('international')
+  const [module, setModule] = useState<Module>('policy')
+  const [region, setRegion] = useState<Region>('domestic')
   const [articles, setArticles] = useState<Article[]>([])
   const [configuredSources, setConfiguredSources] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -148,8 +154,15 @@ export default function HomePage() {
       } else {
         setConfiguredSources((sourceResult.data ?? []).map((source) => source.name).filter(Boolean))
       }
-      // 客户端排序：发布时间降序 -> 核心期刊优先 -> 引用数降序
+      // 国内政策首页固定以《中华人民共和国学前教育法》为首项；
+      // 其他场景按发布时间降序 -> 核心期刊优先 -> 引用数降序。
       const sorted = (data ?? []).sort((a, b) => {
+        if (module === 'policy' && region === 'domestic') {
+          const aPrimary = isPrimaryPolicy(a)
+          const bPrimary = isPrimaryPolicy(b)
+          if (aPrimary !== bPrimary) return aPrimary ? -1 : 1
+        }
+
         const ta = a.published_at ? new Date(a.published_at).getTime() : 0
         const tb = b.published_at ? new Date(b.published_at).getTime() : 0
         if (tb !== ta) return tb - ta

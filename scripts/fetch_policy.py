@@ -50,6 +50,43 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
+# 31 个省级行政区的教育主管部门官方入口。
+# 统一使用官网入口，再由严格的学前教育关键词规则筛选页面链接；
+# 上海在 run() 中优先使用其结构化 JSON API，避免重复抓取。
+PROVINCIAL_EDUCATION_SOURCES = [
+    ("北京", "北京市教育委员会", "https://jw.beijing.gov.cn/", "https://jw.beijing.gov.cn"),
+    ("天津", "天津市教育委员会", "https://jy.tj.gov.cn/", "https://jy.tj.gov.cn"),
+    ("河北", "河北省教育厅", "https://jyt.hebei.gov.cn/", "https://jyt.hebei.gov.cn"),
+    ("山西", "山西省教育厅", "https://jyt.shanxi.gov.cn/", "https://jyt.shanxi.gov.cn"),
+    ("内蒙古", "内蒙古自治区教育厅", "https://jyt.nmg.gov.cn/", "https://jyt.nmg.gov.cn"),
+    ("辽宁", "辽宁省教育厅", "https://jyt.ln.gov.cn/", "https://jyt.ln.gov.cn"),
+    ("吉林", "吉林省教育厅", "https://jyt.jl.gov.cn/", "https://jyt.jl.gov.cn"),
+    ("黑龙江", "黑龙江省教育厅", "https://jyt.hlj.gov.cn/", "https://jyt.hlj.gov.cn"),
+    ("上海", "上海市教育委员会", "https://edu.sh.gov.cn/", "https://edu.sh.gov.cn"),
+    ("江苏", "江苏省教育厅", "https://jyt.jiangsu.gov.cn/", "https://jyt.jiangsu.gov.cn"),
+    ("浙江", "浙江省教育厅", "https://jyt.zj.gov.cn/", "https://jyt.zj.gov.cn"),
+    ("安徽", "安徽省教育厅", "https://jyt.ah.gov.cn/", "https://jyt.ah.gov.cn"),
+    ("福建", "福建省教育厅", "https://jyt.fujian.gov.cn/", "https://jyt.fujian.gov.cn"),
+    ("江西", "江西省教育厅", "https://jyt.jiangxi.gov.cn/", "https://jyt.jiangxi.gov.cn"),
+    ("山东", "山东省教育厅", "https://edu.shandong.gov.cn/", "https://edu.shandong.gov.cn"),
+    ("河南", "河南省教育厅", "https://jyt.henan.gov.cn/", "https://jyt.henan.gov.cn"),
+    ("湖北", "湖北省教育厅", "https://jyt.hubei.gov.cn/", "https://jyt.hubei.gov.cn"),
+    ("湖南", "湖南省教育厅", "https://jyt.hunan.gov.cn/", "https://jyt.hunan.gov.cn"),
+    ("广东", "广东省教育厅", "https://edu.gd.gov.cn/", "https://edu.gd.gov.cn"),
+    ("广西", "广西壮族自治区教育厅", "https://jyt.gxzf.gov.cn/", "https://jyt.gxzf.gov.cn"),
+    ("海南", "海南省教育厅", "https://edu.hainan.gov.cn/", "https://edu.hainan.gov.cn"),
+    ("重庆", "重庆市教育委员会", "https://jw.cq.gov.cn/", "https://jw.cq.gov.cn"),
+    ("四川", "四川省教育厅", "https://edu.sc.gov.cn/", "https://edu.sc.gov.cn"),
+    ("贵州", "贵州省教育厅", "https://jyt.guizhou.gov.cn/", "https://jyt.guizhou.gov.cn"),
+    ("云南", "云南省教育厅", "https://jyt.yn.gov.cn/", "https://jyt.yn.gov.cn"),
+    ("西藏", "西藏自治区教育厅", "https://jyt.xizang.gov.cn/", "https://jyt.xizang.gov.cn"),
+    ("陕西", "陕西省教育厅", "https://jyt.shaanxi.gov.cn/", "https://jyt.shaanxi.gov.cn"),
+    ("甘肃", "甘肃省教育厅", "https://jyt.gansu.gov.cn/", "https://jyt.gansu.gov.cn"),
+    ("青海", "青海省教育厅", "https://jyt.qinghai.gov.cn/", "https://jyt.qinghai.gov.cn"),
+    ("宁夏", "宁夏回族自治区教育厅", "https://jyt.nx.gov.cn/", "https://jyt.nx.gov.cn"),
+    ("新疆", "新疆维吾尔自治区教育厅", "https://jyt.xinjiang.gov.cn/", "https://jyt.xinjiang.gov.cn"),
+]
+
 
 def safe_get(url: str, **kwargs):
     """请求包装：超时重试一次；证书异常时降级 verify=False 重试一次。"""
@@ -287,7 +324,7 @@ def ensure_articles_table() -> bool:
 
 def should_keep_target_content(article: dict) -> bool:
     """统一保留规则：
-    - policy: 学前相关 OR (AI+教育) OR 政策文件关键词（通知/指南/新闻等）
+    - policy: 学前相关 AND 政策文件特征（通知/办法/指南/法规等）
     - research_practice: 学前相关 OR (AI+教育)
     """
     region = article.get("region") if article.get("region") in {"domestic", "international"} else "global"
@@ -299,9 +336,9 @@ def should_keep_target_content(article: dict) -> bool:
         article.get("abstract_original") or "",
         article.get("abstract_zh") or "",
     ])
+    if module == "policy":
+        return bool(patterns["early"].search(text) and patterns["policy_document"].search(text))
     if patterns["early"].search(text):
-        return True
-    if module == "policy" and patterns["policy_document"].search(text):
         return True
     return bool(patterns["ai"].search(text) and patterns["education"].search(text))
 
@@ -402,7 +439,7 @@ def scrape_city(name: str, list_url: str, base_url: str):
             })
     except Exception as e:
         print(f"  [ERR] {name}: {e}")
-    return articles[:20]  # 每次最多取20条最新
+    return articles[:200]  # 先保留较大的候选池，再由 save_articles 严格过滤
 
 
 def scrape_shanghai():
@@ -549,13 +586,21 @@ def run():
     collect(save_articles(scrape_shanghai()))
     time.sleep(1)
 
+    print("=== 抓取 省级教育主管部门 ===")
+    for region_name, source_name, url, base in PROVINCIAL_EDUCATION_SOURCES:
+        if region_name == "上海":
+            continue  # 上海已使用上方结构化 API
+        print(f"  {source_name}...")
+        collect(save_articles(scrape_city(source_name, url, base)))
+        time.sleep(0.5)
+
+    print("=== 抓取 补充城市教育局 ===")
     city_sources = [
-        ("北京市教育委员会", "https://jw.beijing.gov.cn/xxgk/zxxxgk/", "https://jw.beijing.gov.cn"),
-        ("深圳市教育局",     "https://www.szedu.net/xxgk/zxxxgk/",     "https://www.szedu.net"),
-        ("杭州市教育局",     "https://edu.hangzhou.gov.cn/col/col1229284/index.html", "https://edu.hangzhou.gov.cn"),
-        ("广州市教育局",     "https://www.gzedu.gov.cn/xxgk/zxxxgk/",  "https://www.gzedu.gov.cn"),
-        ("成都市教育局",     "https://edu.chengdu.gov.cn/cdjyxxgk/c131823/list.shtml", "https://edu.chengdu.gov.cn"),
-        ("苏州市教育局",     "https://jyj.suzhou.gov.cn/szsjyj/xxgk/list.shtml", "https://jyj.suzhou.gov.cn"),
+        ("深圳市教育局", "https://www.szedu.net/xxgk/zxxxgk/", "https://www.szedu.net"),
+        ("杭州市教育局", "https://edu.hangzhou.gov.cn/col/col1229284/index.html", "https://edu.hangzhou.gov.cn"),
+        ("广州市教育局", "https://www.gzedu.gov.cn/xxgk/zxxxgk/", "https://www.gzedu.gov.cn"),
+        ("成都市教育局", "https://edu.chengdu.gov.cn/cdjyxxgk/c131823/list.shtml", "https://edu.chengdu.gov.cn"),
+        ("苏州市教育局", "https://jyj.suzhou.gov.cn/szsjyj/xxgk/list.shtml", "https://jyj.suzhou.gov.cn"),
     ]
     for name, url, base in city_sources:
         print(f"  {name}...")
