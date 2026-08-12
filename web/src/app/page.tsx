@@ -21,8 +21,29 @@ const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 // 首页以国内政策库为主；《中华人民共和国学前教育法》作为阅读入口，
 // 其余记录仍按正式发布日期由新到旧排列。
 const PRIMARY_POLICY_TITLE = '中华人民共和国学前教育法'
+const CENTRAL_SCOPE = 'scope:central'
+const PROVINCE_SCOPE_PREFIX = 'scope:province:'
+const PROVINCES = [
+  '北京', '天津', '河北', '山西', '内蒙古', '辽宁', '吉林', '黑龙江',
+  '上海', '江苏', '浙江', '安徽', '福建', '江西', '山东', '河南',
+  '湖北', '湖南', '广东', '广西', '海南', '重庆', '四川', '贵州',
+  '云南', '西藏', '陕西', '甘肃', '青海', '宁夏', '新疆',
+] as const
+
 const isPrimaryPolicy = (article: Article) =>
   article.title_zh === PRIMARY_POLICY_TITLE || article.title_original === PRIMARY_POLICY_TITLE
+
+const getSourceProvince = (sourceName: string): string | null => {
+  const cityProvinceAliases: Record<string, string> = {
+    广州: '广东', 深圳: '广东', 杭州: '浙江', 成都: '四川', 苏州: '江苏',
+  }
+  for (const [city, province] of Object.entries(cityProvinceAliases)) {
+    if (sourceName.includes(city)) return province
+  }
+  return PROVINCES.find((province) => sourceName.includes(province)) ?? null
+}
+
+const isCentralSource = (sourceName: string) => getSourceProvince(sourceName) === null
 
 type CoreJournalConfig = {
   global?: string[]
@@ -284,8 +305,15 @@ export default function HomePage() {
       ...configuredSources,
       ...articles.map((a) => a.source_name).filter(Boolean),
     ])
-    return Array.from(set).sort()
-  }, [articles, configuredSources])
+    const alphabetical = Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-CN'))
+    if (module !== 'policy' || region !== 'domestic') return alphabetical
+
+    // 国内政策来源依次显示：中央统筹、教育部、其他中央部门、各省。
+    const central = alphabetical.filter(isCentralSource)
+    const ministry = central.filter((source) => source === '教育部')
+    const otherCentral = central.filter((source) => source !== '教育部')
+    return [...ministry, ...otherCentral]
+  }, [articles, configuredSources, module, region])
 
   const sourceCounts = useMemo(() => {
     const counts = new Map<string, number>()
@@ -294,6 +322,30 @@ export default function HomePage() {
     }
     return counts
   }, [articles])
+
+  const centralCount = useMemo(
+    () => articles.filter((article) => isCentralSource(article.source_name)).length,
+    [articles]
+  )
+
+  const provinceCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const article of articles) {
+      const province = getSourceProvince(article.source_name)
+      if (province) counts.set(province, (counts.get(province) ?? 0) + 1)
+    }
+    return counts
+  }, [articles])
+
+  const sourceFilterLabel = useMemo(() => {
+    if (!sourceFilter) return text.allSources
+    if (sourceFilter === CENTRAL_SCOPE) return displayLanguage === 'zh' ? '中央统筹' : 'Central government'
+    if (sourceFilter.startsWith(PROVINCE_SCOPE_PREFIX)) {
+      const province = sourceFilter.slice(PROVINCE_SCOPE_PREFIX.length)
+      return displayLanguage === 'zh' ? province : `${province} province`
+    }
+    return sourceFilter
+  }, [sourceFilter, displayLanguage, text.allSources])
 
   const baseList = useMemo(() => {
     if (showFavorites) return favoriteArticles.filter((a) => bookmarks.has(a.id))
@@ -307,7 +359,16 @@ export default function HomePage() {
     }
     // 收藏模式下直接展示全部收藏，不按分类/来源/搜索筛选
     if (!showFavorites && activeTopic) list = list.filter((a) => (a.topic_tags ?? []).includes(activeTopic))
-    if (!showFavorites && sourceFilter) list = list.filter((a) => a.source_name === sourceFilter)
+    if (!showFavorites && sourceFilter) {
+      if (sourceFilter === CENTRAL_SCOPE) {
+        list = list.filter((a) => isCentralSource(a.source_name))
+      } else if (sourceFilter.startsWith(PROVINCE_SCOPE_PREFIX)) {
+        const province = sourceFilter.slice(PROVINCE_SCOPE_PREFIX.length)
+        list = list.filter((a) => getSourceProvince(a.source_name) === province)
+      } else {
+        list = list.filter((a) => a.source_name === sourceFilter)
+      }
+    }
     if (!showFavorites && search.trim()) {
       const q = search.trim().toLowerCase()
       list = list.filter(
@@ -616,11 +677,11 @@ export default function HomePage() {
                       aria-label={text.selectSource}
                       aria-haspopup="listbox"
                       aria-expanded={sourceDropdownOpen}
-                      title={sourceFilter || text.allSources}
+                      title={sourceFilterLabel}
                       className="flex h-9 w-full items-center overflow-hidden rounded-lg border border-gray-200 bg-white text-gray-700 transition-colors hover:border-gray-300 focus:outline-none focus-visible:border-blue-400 focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
                       <span className="scrollbar-hide min-w-0 flex-1 touch-pan-x overflow-x-auto whitespace-nowrap px-3 text-left text-sm">
-                        {sourceFilter || text.allSources}
+                        {sourceFilterLabel}
                       </span>
                       <span className="flex h-full w-9 flex-shrink-0 items-center justify-center border-l border-gray-100 text-gray-400 transition-colors">
                         <svg
@@ -649,6 +710,21 @@ export default function HomePage() {
                           >
                             {text.allSources}
                           </button>
+                          {module === 'policy' && region === 'domestic' && (
+                            <>
+                              <button
+                                type="button"
+                                role="option"
+                                aria-selected={sourceFilter === CENTRAL_SCOPE}
+                                onClick={() => { setSourceFilter(CENTRAL_SCOPE); setSourceDropdownOpen(false); setPage(1) }}
+                                className={`flex w-full items-center gap-6 border-b border-gray-100 px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === CENTRAL_SCOPE ? 'text-blue-600' : 'text-gray-700'}`}
+                              >
+                                <span className="font-medium">中央统筹</span>
+                                <span className="ml-auto min-w-7 flex-shrink-0 text-right text-xs text-gray-400">{centralCount}</span>
+                              </button>
+                              <div className="border-b border-gray-100 bg-gray-50 px-3 py-1.5 text-[11px] font-medium tracking-wide text-gray-400">中央部门</div>
+                            </>
+                          )}
                           {sources.map((s) => {
                             const count = sourceCounts.get(s) ?? 0
                             return (
@@ -658,7 +734,7 @@ export default function HomePage() {
                                 role="option"
                                 aria-selected={sourceFilter === s}
                                 onClick={() => { setSourceFilter(s); setSourceDropdownOpen(false); setPage(1) }}
-                                className={`flex w-max min-w-full items-center gap-6 whitespace-nowrap px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === s ? 'text-blue-600' : 'text-gray-700'}`}
+                                className={`flex w-full items-center gap-6 whitespace-nowrap px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === s ? 'text-blue-600' : 'text-gray-700'}`}
                                 title={s}
                               >
                                 <span>{s}</span>
@@ -668,6 +744,28 @@ export default function HomePage() {
                               </button>
                             )
                           })}
+                          {module === 'policy' && region === 'domestic' && (
+                            <>
+                              <div className="border-y border-gray-100 bg-gray-50 px-3 py-1.5 text-[11px] font-medium tracking-wide text-gray-400">各省政策</div>
+                              {PROVINCES.map((province) => {
+                                const count = provinceCounts.get(province) ?? 0
+                                const key = `${PROVINCE_SCOPE_PREFIX}${province}`
+                                return (
+                                  <button
+                                    key={key}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={sourceFilter === key}
+                                    onClick={() => { setSourceFilter(key); setSourceDropdownOpen(false); setPage(1) }}
+                                    className={`flex w-full items-center gap-6 whitespace-nowrap px-3 py-2 text-left text-sm hover:bg-gray-50 ${sourceFilter === key ? 'text-blue-600' : 'text-gray-700'}`}
+                                  >
+                                    <span>{province}</span>
+                                    <span className="ml-auto min-w-7 flex-shrink-0 text-right text-xs text-gray-400">{count}</span>
+                                  </button>
+                                )
+                              })}
+                            </>
+                          )}
                         </div>
                       </div>
                     )}
@@ -680,7 +778,7 @@ export default function HomePage() {
               <p className="mt-2 text-xs text-gray-400">
                 {text.resultCount(filtered.length)}
                 {activeTopic && <span> · {getTopicLabel(activeTopic, displayLanguage)}</span>}
-                {sourceFilter && <span> · {sourceFilter}</span>}
+                {sourceFilter && <span> · {sourceFilterLabel}</span>}
                 {search && <span> · "{search}"</span>}
               </p>
             )}
