@@ -94,6 +94,15 @@ class DomesticPolicyFilterTests(unittest.TestCase):
             })
         )
 
+    def test_kindergarten_school_readiness_guidance_is_kept(self):
+        self.assertTrue(
+            should_keep_target_content({
+                "module": "policy",
+                "region": "domestic",
+                "title_original": "幼儿园入学准备教育指导要点",
+            })
+        )
+
 
 class ProvincialSourceCoverageTests(unittest.TestCase):
     def test_all_provincial_level_regions_are_configured(self):
