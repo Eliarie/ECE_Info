@@ -322,9 +322,16 @@ def ensure_articles_table() -> bool:
         raise
 
 
+STRATEGIC_EDUCATION_POLICY_TITLES = [
+    "教育强国建设规划纲要",
+    "教育强国建设三年行动计划",
+]
+
+
 def should_keep_target_content(article: dict) -> bool:
     """统一保留规则：
     - policy: 学前相关 AND 政策文件特征（通知/办法/指南/法规等）
+    - policy 战略例外: 明确纳入教育强国纲要/行动计划等上位教育政策
     - research_practice: 学前相关 OR (AI+教育)
     """
     region = article.get("region") if article.get("region") in {"domestic", "international"} else "global"
@@ -337,6 +344,8 @@ def should_keep_target_content(article: dict) -> bool:
         article.get("abstract_zh") or "",
     ])
     if module == "policy":
+        if region == "domestic" and any(title in text for title in STRATEGIC_EDUCATION_POLICY_TITLES):
+            return bool(patterns["policy_document"].search(text))
         return bool(patterns["early"].search(text) and patterns["policy_document"].search(text))
     if patterns["early"].search(text):
         return True

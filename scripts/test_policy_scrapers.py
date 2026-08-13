@@ -103,6 +103,24 @@ class DomesticPolicyFilterTests(unittest.TestCase):
             })
         )
 
+    def test_education_powerhouse_blueprint_is_kept_as_strategic_policy(self):
+        self.assertTrue(
+            should_keep_target_content({
+                "module": "policy",
+                "region": "domestic",
+                "title_original": "中共中央 国务院印发《教育强国建设规划纲要（2024—2035年）》",
+            })
+        )
+
+    def test_education_powerhouse_action_plan_is_kept_as_strategic_policy(self):
+        self.assertTrue(
+            should_keep_target_content({
+                "module": "policy",
+                "region": "domestic",
+                "title_original": "制定实施教育强国建设三年行动计划",
+            })
+        )
+
 
 class ProvincialSourceCoverageTests(unittest.TestCase):
     def test_all_provincial_level_regions_are_configured(self):
