@@ -83,6 +83,14 @@ const buildCoreJournalSetByRegion = (): Record<Region, Set<string>> => {
 const CORE_JOURNAL_NAMES_BY_REGION = buildCoreJournalSetByRegion()
 
 const getBookmarkDeviceId = () => {
+  const params = new URLSearchParams(window.location.search)
+  const sharedId = params.get('bookmark_sync')
+  if (sharedId && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sharedId)) {
+    localStorage.setItem(BOOKMARK_DEVICE_KEY, sharedId)
+    params.delete('bookmark_sync')
+    const clean = `${window.location.pathname}${params.size ? `?${params}` : ''}${window.location.hash}`
+    window.history.replaceState({}, '', clean)
+  }
   let deviceId = localStorage.getItem(BOOKMARK_DEVICE_KEY)
   if (!deviceId) {
     deviceId = crypto.randomUUID()
@@ -199,22 +207,40 @@ export default function HomePage() {
   }, [module, region])
 
   useEffect(() => {
-    if (!supabase) return
+    let deviceId: string
     try {
-      const deviceId = getBookmarkDeviceId()
+      deviceId = getBookmarkDeviceId()
       bookmarkDeviceIdRef.current = deviceId
-      for (const articleId of bookmarks) {
-        void supabase.rpc('set_article_saved', {
-          p_device_id: deviceId,
-          p_article_id: articleId,
-          p_saved: true,
-        }).then(({ error }) => {
-          if (error) console.error('Supabase bookmark sync error:', error)
-        })
-      }
     } catch (error) {
       console.error('Bookmark device initialization error:', error)
+      return
     }
+    if (!supabase) return
+    let cancelled = false
+    const synchronizeBookmarks = async () => {
+      try {
+        const { data, error } = await supabase.rpc('get_saved_article_ids', { p_device_id: deviceId })
+        if (error) console.error('Supabase bookmark read error:', error)
+        const remoteIds = (data ?? []).map((row: { article_id: string }) => row.article_id)
+        const merged = new Set([...bookmarks, ...remoteIds])
+        if (!cancelled) {
+          setBookmarks(merged)
+          localStorage.setItem('bookmarks', JSON.stringify(Array.from(merged)))
+        }
+        for (const articleId of bookmarks) {
+          const { error: saveError } = await supabase.rpc('set_article_saved', {
+            p_device_id: deviceId,
+            p_article_id: articleId,
+            p_saved: true,
+          })
+          if (saveError) console.error('Supabase bookmark sync error:', saveError)
+        }
+      } catch (error) {
+        console.error('Bookmark device initialization error:', error)
+      }
+    }
+    void synchronizeBookmarks()
+    return () => { cancelled = true }
   }, [])
 
   useEffect(() => {
@@ -277,6 +303,18 @@ export default function HomePage() {
       }).then(({ error }) => {
         if (error) console.error('Supabase bookmark sync error:', error)
       })
+    }
+  }
+
+  const shareBookmarkSync = async () => {
+    const deviceId = bookmarkDeviceIdRef.current ?? getBookmarkDeviceId()
+    const url = new URL(window.location.origin + window.location.pathname)
+    url.searchParams.set('bookmark_sync', deviceId)
+    try {
+      await navigator.clipboard.writeText(url.toString())
+      window.alert(text.syncLinkCopied)
+    } catch {
+      window.prompt(text.copySyncLink, url.toString())
     }
   }
 
@@ -468,6 +506,19 @@ export default function HomePage() {
                   {bookmarks.size}
                 </span>
               )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => { void shareBookmarkSync() }}
+              aria-label={text.syncFavorites}
+              title={text.syncFavorites}
+              className="flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3"
+            >
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M8 12h8M10 8l-4 4 4 4M14 8l4 4-4 4" />
+              </svg>
+              <span className="hidden lg:inline">{text.syncFavorites}</span>
             </button>
 
             <div
