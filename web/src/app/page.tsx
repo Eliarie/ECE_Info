@@ -115,6 +115,7 @@ export default function HomePage() {
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false)
   const [topicsOpen, setTopicsOpen] = useState(false)
   const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
+  const [syncLink, setSyncLink] = useState<string | null>(null)
   const text = UI_TEXT[displayLanguage]
   const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
   const resultsTopRef = useRef<HTMLDivElement | null>(null)
@@ -310,11 +311,12 @@ export default function HomePage() {
     const deviceId = bookmarkDeviceIdRef.current ?? getBookmarkDeviceId()
     const url = new URL(window.location.origin + window.location.pathname)
     url.searchParams.set('bookmark_sync', deviceId)
+    const link = url.toString()
+    setSyncLink(link)
     try {
-      await navigator.clipboard.writeText(url.toString())
-      window.alert(text.syncLinkCopied)
+      await navigator.clipboard.writeText(link)
     } catch {
-      window.prompt(text.copySyncLink, url.toString())
+      // 复制权限不可用时仍显示页面内的链接，不依赖浏览器弹窗。
     }
   }
 
@@ -550,6 +552,25 @@ export default function HomePage() {
           </div>
         </div>
       </nav>
+
+      {syncLink && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" role="dialog" aria-modal="true" aria-labelledby="sync-link-title">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <div className="mb-3 flex items-start justify-between gap-4">
+              <div>
+                <h2 id="sync-link-title" className="text-base font-semibold text-gray-900">{text.syncFavorites}</h2>
+                <p className="mt-1 text-sm text-gray-600">{text.syncLinkCopied}</p>
+              </div>
+              <button type="button" onClick={() => setSyncLink(null)} aria-label="关闭" className="rounded p-1 text-xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-700">×</button>
+            </div>
+            <input readOnly value={syncLink} onFocus={(event) => event.currentTarget.select()} className="w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700" aria-label={text.copySyncLink} />
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setSyncLink(null)} className="rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">关闭</button>
+              <button type="button" onClick={() => { void navigator.clipboard?.writeText(syncLink) }} className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">复制链接</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto max-w-7xl px-4 py-4 sm:py-5 lg:py-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:gap-12">
