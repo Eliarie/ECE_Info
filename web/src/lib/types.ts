@@ -22,12 +22,21 @@ export interface Article {
   topic_version?: string | null
 }
 
+export interface DigestHighlight {
+  article_id: string
+  result_zh: string
+  core_zh: string
+  result_en: string | null
+  core_en: string | null
+}
+
 export interface WeeklyDigest {
   id: string
   week_start: string
   week_end: string
   summary_zh: string
   summary_en: string | null
+  highlights?: DigestHighlight[]
   article_ids: string[]
   article_count: number
   created_at: string

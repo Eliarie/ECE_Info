@@ -1,7 +1,10 @@
 """Generate the weekly research digest (本周速览) from newly fetched journal articles.
 
-Summarizes the week's research_frontier articles into one plain-language paragraph
-(zh + en), then stores it in the `weekly_digests` table for the homepage to display.
+Produces:
+- an overview paragraph (zh+en) with inline [text](index) references to articles,
+- per-article highlights (result + core, zh+en).
+
+Stores everything in `weekly_digests` for the homepage to display.
 """
 
 from __future__ import annotations
@@ -26,7 +29,8 @@ TZ = ZoneInfo("Asia/Shanghai")
 MODULE = "research_frontier"
 MAX_ARTICLES = int(os.environ.get("DIGEST_MAX_ARTICLES", "40"))
 MIN_ARTICLES = int(os.environ.get("DIGEST_MIN_ARTICLES", "3"))
-ABSTRACT_CHAR_LIMIT = int(os.environ.get("DIGEST_ABSTRACT_CHAR_LIMIT", "300"))
+ABSTRACT_CHAR_LIMIT = int(os.environ.get("DIGEST_ABSTRACT_CHAR_LIMIT", "260"))
+HIGHLIGHT_BATCH = int(os.environ.get("DIGEST_HIGHLIGHT_BATCH", "10"))
 REQUEST_RETRIES = int(os.environ.get("DIGEST_REQUEST_RETRIES", "3"))
 
 
@@ -44,8 +48,8 @@ def ensure_digests_table() -> bool:
 
 def current_week_window() -> tuple[dt.date, dt.date]:
     today = dt.datetime.now(TZ).date()
-    week_end = today - dt.timedelta(days=1)    # 昨天（含）
-    week_start = today - dt.timedelta(days=7)  # 7 天前（含）
+    week_end = today - dt.timedelta(days=1)
+    week_start = today - dt.timedelta(days=7)
     return week_start, week_end
 
 
@@ -76,7 +80,6 @@ def load_week_articles(week_start: dt.date, week_end: dt.date) -> list[dict]:
             break
         offset += page_size
 
-    # 最新优先，并限制喂给模型的数量
     articles.sort(key=lambda a: a.get("published_at") or "", reverse=True)
     return articles[:MAX_ARTICLES]
 
@@ -92,7 +95,7 @@ def display_abstract(a: dict) -> str:
     return abstract
 
 
-def build_prompt(articles: list[dict]) -> str:
+def build_article_listing(articles: list[dict]) -> str:
     lines = []
     for i, a in enumerate(articles, start=1):
         title = display_title(a)
@@ -104,51 +107,136 @@ def build_prompt(articles: list[dict]) -> str:
         if abstract:
             line += f"\n   摘要：{abstract}"
         lines.append(line)
-    listing = "\n".join(lines)
-
-    return f"""你是学前教育领域的研究助理。以下是过去一周新发表的学前教育学术论文清单。请把它们综合成一段「本周速览」：
-
-要求：
-1. 用通俗易懂的大白话写，像新媒体新闻或文献综述的导语，面向一线幼教工作者、家长和关注教育的普通读者，不要堆砌学术术语。
-2. 不是逐篇罗列，而是提炼本周研究的共同主题、热点问题或值得关注的新发现（2-3 个短段落即可，总长 150-250 字）。
-3. 如果论文之间有呼应或分歧，可以点出来；没有就不强求。
-4. 同时写一份英文版 summary_en（同样通俗，80-150 词）。
-
-输出格式严格如下（JSON，不要有其他内容）：
-{{
-  "summary_zh": "中文速览",
-  "summary_en": "English digest"
-}}
-
-论文清单：
-{listing}"""
+    return "\n".join(lines)
 
 
-def generate_digest(articles: list[dict]) -> tuple[str, str]:
-    prompt = build_prompt(articles)
+def _chat_json(prompt: str, max_tokens: int = 2000, temperature: float = 0.4) -> dict:
     last_error: Exception | None = None
     for attempt in range(1, REQUEST_RETRIES + 1):
         try:
             resp = client.chat.completions.create(
                 model="deepseek-chat",
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.4,
-                max_tokens=2000,
+                temperature=temperature,
+                max_tokens=max_tokens,
                 response_format={"type": "json_object"},
             )
             raw = (resp.choices[0].message.content or "").strip()
-            data = json.loads(raw)
-            summary_zh = (data.get("summary_zh") or "").strip()
-            summary_en = (data.get("summary_en") or "").strip()
-            if not summary_zh:
-                raise ValueError("模型未返回中文速览")
-            return summary_zh, summary_en
+            return json.loads(raw)
         except Exception as error:
             last_error = error
-            print(f"    [WARN] 第 {attempt}/{REQUEST_RETRIES} 次生成失败: {error}")
+            print(f"    [WARN] 第 {attempt}/{REQUEST_RETRIES} 次失败: {error}")
             if attempt < REQUEST_RETRIES:
                 time.sleep(min(2 ** attempt, 8))
     raise RuntimeError(str(last_error))
+
+
+def generate_overview(articles: list[dict]) -> tuple[str, str]:
+    listing = build_article_listing(articles)
+    prompt = f"""你是学前教育领域的研究助理。以下是本周新发表的论文清单（每篇有编号、标题、摘要）。
+
+请写一段「本周概览」：
+1. 通俗大白话（面向一线幼教工作者、家长和普通读者），不要堆学术术语。
+2. 250-350 字，2-4 个自然段。
+3. 当你提到某篇论文的具体观点或发现时，用 [短语](编号) 形式内联标注，编号必须是下面清单中的序号（1-{len(articles)}），至少标注 6 处，让读者点进去看原文。
+4. 不要逐篇罗列，提炼共同主题、热点和值得关注的发现；有呼应或分歧可以点出来。
+5. 同时写一份英文版 overview_en（150-200 词，同样用 [phrase](number) 标注）。
+
+输出严格为 JSON（不要其他内容）：
+{{"overview_zh": "...", "overview_en": "..."}}
+
+论文清单：
+{listing}"""
+    data = _chat_json(prompt, max_tokens=2400, temperature=0.5)
+    zh = (data.get("overview_zh") or "").strip()
+    en = (data.get("overview_en") or "").strip()
+    if not zh:
+        raise ValueError("模型未返回中文概览")
+    return zh, en
+
+
+def generate_highlights(articles: list[dict]) -> list[dict]:
+    highlights: list[dict] = []
+    for start in range(0, len(articles), HIGHLIGHT_BATCH):
+        chunk = articles[start:start + HIGHLIGHT_BATCH]
+        listing = build_article_listing(chunk)
+        prompt = f"""以下是若干篇学前教育论文。请为每篇各写两句话（中文 + 英文）：
+- result：一句话说明该研究的核心结果/发现
+- core：一句话说明这篇论文的中心内容/在研究什么问题
+
+要求通俗、准确、不照抄摘要。
+
+输出 JSON 对象，含 items 数组，顺序与输入一致，不要输出其他内容：
+{{"items":[{{"result_zh": "...", "core_zh": "...", "result_en": "...", "core_en": "..."}}]}}
+
+论文：
+{listing}"""
+        data = _chat_json(prompt, max_tokens=3000, temperature=0.3)
+        items = data.get("items") if isinstance(data, dict) else data
+        if not isinstance(items, list):
+            raise ValueError("模型未返回 highlights items 数组")
+        for idx, item in enumerate(items):
+            if idx >= len(chunk):
+                continue
+            article = chunk[idx]
+            highlights.append({
+                "article_id": article["id"],
+                "result_zh": (item.get("result_zh") or "").strip(),
+                "core_zh": (item.get("core_zh") or "").strip(),
+                "result_en": (item.get("result_en") or "").strip(),
+                "core_en": (item.get("core_en") or "").strip(),
+            })
+        print(f"  [OK] highlights {start + 1}-{start + len(chunk)}/{len(articles)}")
+        time.sleep(0.3)
+
+    # 无摘要的论文可能被模型返回空，用标题单独补写
+    empty_idx = [i for i, h in enumerate(highlights) if not (h["result_zh"] and h["core_zh"])]
+    if empty_idx:
+        print(f"  [WARN] {len(empty_idx)} 条分点为空，用标题重试…")
+        repaired = _generate_highlights_title_only([articles[i] for i in empty_idx])
+        for pos, idx in enumerate(empty_idx):
+            if pos < len(repaired):
+                highlights[idx] = repaired[pos]
+    return highlights
+
+
+def _generate_highlights_title_only(articles: list[dict]) -> list[dict]:
+    lines = []
+    for a in articles:
+        title = display_title(a)
+        source = (a.get("source_name") or "").strip()
+        line = f"- {title}"
+        if source:
+            line += f"（{source}）"
+        lines.append(line)
+    listing = "\n".join(lines)
+
+    prompt = f"""以下论文仅有标题（无摘要）。请根据标题为每篇各写两句话（中文 + 英文）：
+- result：一句话说明该研究可能的发现/结论；若标题无法判断结果，写该研究关注的焦点问题
+- core：一句话说明这篇论文的中心内容/在研究什么问题
+
+输出 JSON 对象，含 items 数组，顺序与输入一致，不要输出其他内容：
+{{"items":[{{"result_zh": "...", "core_zh": "...", "result_en": "...", "core_en": "..."}}]}}
+
+论文：
+{listing}"""
+    data = _chat_json(prompt, max_tokens=2000, temperature=0.3)
+    items = data.get("items") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
+    out: list[dict] = []
+    for idx, item in enumerate(items):
+        if idx >= len(articles):
+            continue
+        article = articles[idx]
+        out.append({
+            "article_id": article["id"],
+            "result_zh": (item.get("result_zh") or "").strip(),
+            "core_zh": (item.get("core_zh") or "").strip(),
+            "result_en": (item.get("result_en") or "").strip(),
+            "core_en": (item.get("core_en") or "").strip(),
+        })
+    return out
 
 
 def run() -> None:
@@ -166,15 +254,19 @@ def run() -> None:
         print(f"本周仅 {len(articles)} 篇，低于阈值 {MIN_ARTICLES}，跳过")
         return
 
-    print(f"共 {len(articles)} 篇论文，开始生成速览…")
-    summary_zh, summary_en = generate_digest(articles)
+    print(f"共 {len(articles)} 篇论文")
+    print("生成概览…")
+    overview_zh, overview_en = generate_overview(articles)
+    print("生成分点总结…")
+    highlights = generate_highlights(articles)
 
     article_ids = [a["id"] for a in articles]
     payload = {
         "week_start": week_start.isoformat(),
         "week_end": week_end.isoformat(),
-        "summary_zh": summary_zh,
-        "summary_en": summary_en,
+        "summary_zh": overview_zh,
+        "summary_en": overview_en,
+        "highlights": highlights,
         "article_ids": article_ids,
         "article_count": len(article_ids),
     }
@@ -185,11 +277,9 @@ def run() -> None:
         print(f"[ERR] 写入 weekly_digests 失败: {error}")
         raise SystemExit(1)
 
-    print(f"[OK] 速览已写入（{len(article_ids)} 篇论文）")
-    print("中文：")
-    print(summary_zh)
-    print("英文：")
-    print(summary_en)
+    print(f"[OK] 已写入（{len(article_ids)} 篇，{len(highlights)} 条分点）")
+    print("概览：")
+    print(overview_zh)
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ create table if not exists public.weekly_digests (
     week_end      date not null,
     summary_zh    text not null,
     summary_en    text,
+    highlights    jsonb default '[]'::jsonb,
     article_ids   jsonb default '[]'::jsonb,
     article_count integer default 0,
     created_at    timestamptz default now()
