@@ -21,3 +21,14 @@ export interface Article {
   topic_tags?: string[]
   topic_version?: string | null
 }
+
+export interface WeeklyDigest {
+  id: string
+  week_start: string
+  week_end: string
+  summary_zh: string
+  summary_en: string | null
+  article_ids: string[]
+  article_count: number
+  created_at: string
+}
