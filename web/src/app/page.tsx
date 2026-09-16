@@ -17,7 +17,10 @@ const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 const formatPeriod = (from: string, to: string, language: DisplayLanguage) => {
   const locale = language === 'zh' ? 'zh-CN' : 'en-US'
   const fromDate = new Date(`${from}T00:00:00`).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
-  const toDate = new Date(`${to}T00:00:00`).toLocaleDateString(locale, { month: 'short', day: 'numeric', year: 'numeric' })
+  const toDate = new Date(`${to}T00:00:00`).toLocaleDateString(
+    locale,
+    language === 'zh' ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' }
+  )
   return `${fromDate} — ${toDate}`
 }
 
@@ -72,7 +75,7 @@ function renderOverviewLinks(text: string, orderedArticles: (Article | undefined
           href={article.source_url}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-blue-600 underline underline-offset-2 decoration-blue-300 hover:text-blue-800 hover:decoration-blue-600"
+          className="text-blue-700 underline decoration-blue-300/70 underline-offset-[3px] transition-colors hover:text-blue-900 hover:decoration-blue-500"
         >
           {label}
         </a>
@@ -179,6 +182,11 @@ export default function HomePage() {
     ? digest?.summary_zh
     : (digest?.summary_en || digest?.summary_zh)
 
+  const overviewParagraphs = useMemo(
+    () => (overview ?? '').split(/\n+/).map((p) => p.trim()).filter(Boolean),
+    [overview]
+  )
+
   const articleTitle = (a: Article | undefined) => {
     if (!a) return ''
     return displayLanguage === 'zh'
@@ -193,25 +201,27 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <nav
-        className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur"
+        className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur"
         aria-label={text.mainNavigation}
       >
         <div className="mx-auto flex min-h-14 max-w-3xl items-center gap-3 px-4 py-2 sm:min-h-16">
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg">{text.brand}</h1>
+            <h1 className="truncate text-base font-semibold tracking-tight text-gray-900 sm:text-lg">
+              {text.brand}
+            </h1>
             <p className="mt-0.5 hidden truncate text-xs text-gray-500 sm:block">{text.subtitle}</p>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-3">
+          <div className="flex flex-shrink-0 items-center gap-2">
             <Link
               href="/browse"
-              className="flex h-9 items-center rounded-md border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900"
+              className="flex h-9 items-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900"
             >
               {text.digestBrowse}
             </Link>
 
             <div
-              className="inline-flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5"
+              className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5"
               role="group"
               aria-label={text.interfaceLanguage}
             >
@@ -225,10 +235,10 @@ export default function HomePage() {
                   onClick={() => changeDisplayLanguage(value)}
                   aria-pressed={displayLanguage === value}
                   aria-label={text.useLanguage(label)}
-                  className={`h-8 min-w-10 rounded px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:min-w-[4.25rem] ${
+                  className={`h-8 min-w-10 rounded-md px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:min-w-[4.25rem] ${
                     displayLanguage === value
-                      ? 'bg-gray-900 text-white shadow-sm'
-                      : 'text-gray-500 hover:bg-white hover:text-gray-800'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-800'
                   }`}
                 >
                   <span className="sm:hidden">{compactLabel}</span>
@@ -240,152 +250,162 @@ export default function HomePage() {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-3xl px-4 py-6 sm:py-10">
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
         {loading ? (
-          <div className="py-16 text-center text-sm text-gray-400">{text.loading}</div>
+          <div className="py-24 text-center text-sm text-gray-400">{text.loading}</div>
         ) : !hasSupabaseEnv ? (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
             <p className="font-medium">{text.missingEnvTitle}</p>
             <p className="mt-2">{text.missingEnvBody}</p>
           </div>
         ) : !digest ? (
-          <div className="py-16 text-center">
+          <div className="py-24 text-center">
             <p className="text-sm text-gray-500">{text.digestEmpty}</p>
             <Link
               href="/browse"
-              className="mt-5 inline-flex h-9 items-center rounded-md border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              className="mt-5 inline-flex h-9 items-center rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50"
             >
               {text.digestBrowse} →
             </Link>
           </div>
         ) : (
           <>
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+            {/* Hero */}
+            <span className="inline-flex items-center rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">
               {text.digestTitle}
-            </p>
-            <h2 className="mt-2 text-2xl font-semibold leading-tight text-gray-900 sm:text-3xl">
+            </span>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
               {formatPeriod(digest.week_start, digest.week_end, displayLanguage)}
             </h2>
+            <p className="mt-2 text-sm text-gray-500">
+              {text.digestCount(digest.article_count || orderedArticles.length)}
+              <span className="mx-1.5 text-gray-300">·</span>
+              {displayLanguage === 'zh' ? 'AI 自动生成' : 'AI-generated'}
+            </p>
 
-            <div className="mt-5 flex items-center gap-2">
-              <input
-                type="text"
-                value={interest}
-                onChange={(e) => setInterest(e.target.value)}
-                placeholder={text.digestInterestPlaceholder}
-                aria-label={text.digestInterestPlaceholder}
-                className="w-full min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:border-blue-400 focus:outline-none"
-              />
+            {/* 兴趣筛选 */}
+            <div className="mt-6 flex items-center gap-2">
+              <div className="relative flex-1">
+                <svg
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="11" cy="11" r="8" />
+                  <path d="m21 21-4.3-4.3" />
+                </svg>
+                <input
+                  type="text"
+                  value={interest}
+                  onChange={(e) => setInterest(e.target.value)}
+                  placeholder={text.digestInterestPlaceholder}
+                  aria-label={text.digestInterestPlaceholder}
+                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
               {interest && (
                 <button
                   type="button"
                   onClick={() => setInterest('')}
-                  className="flex-shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
+                  className="flex-shrink-0 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
                 >
                   {text.digestInterestClear}
                 </button>
               )}
             </div>
 
-            <p className="mt-6 whitespace-pre-line text-[17px] leading-relaxed text-gray-800">
-              {renderOverviewLinks(overview ?? '', orderedArticles)}
-            </p>
-            <p className="mt-4 text-xs text-gray-400">{text.digestDisclaimer}</p>
-
-            {highlights.length > 0 ? (
-              <section className="mt-8">
-                <h3 className="flex items-baseline gap-2 text-sm font-semibold text-gray-900">
-                  {text.digestHighlightsTitle}
-                  {interest.trim() && (
-                    <span className="font-normal text-gray-400">
-                      · {text.digestInterestMatched(filteredHighlights.length)}
-                    </span>
-                  )}
-                </h3>
-                {filteredHighlights.length === 0 ? (
-                  <p className="mt-3 rounded-lg border border-gray-200 bg-white px-4 py-6 text-center text-sm text-gray-400">
-                    {text.digestNoMatch}
+            {/* 本周概览 */}
+            <section className="mt-10">
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                {text.digestOverviewTitle}
+              </h3>
+              <div className="mt-4 space-y-4">
+                {overviewParagraphs.map((paragraph, i) => (
+                  <p key={i} className="text-[16px] leading-8 text-gray-800">
+                    {renderOverviewLinks(paragraph, orderedArticles)}
                   </p>
-                ) : (
-                  <ul className="mt-3 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
-                    {filteredHighlights.map((h) => {
-                      const title = articleTitle(h.article)
-                      const date = articleDate(h.article)
-                      const result = displayLanguage === 'zh'
-                        ? h.result_zh
-                        : (h.result_en || h.result_zh)
-                      const core = displayLanguage === 'zh'
-                        ? h.core_zh
-                        : (h.core_en || h.core_zh)
-                      return (
-                        <li key={h.article_id} className="px-4 py-3.5">
-                          <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-2">
-                            {h.article?.source_url ? (
-                              <a
-                                href={h.article.source_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-sm font-medium text-blue-600 underline underline-offset-2 decoration-blue-300 hover:text-blue-800"
-                              >
-                                {title}
-                              </a>
-                            ) : (
-                              <span className="text-sm font-medium text-gray-900">{title}</span>
-                            )}
-                            <span className="flex-shrink-0 text-xs text-gray-400">
-                              {h.article?.source_name}
-                              {date ? ` · ${date}` : ''}
-                            </span>
-                          </div>
-                          <div className="mt-1.5 space-y-1 text-sm leading-relaxed text-gray-700">
-                            {result && (
-                              <p>
-                                <span className="font-medium text-gray-900">{text.digestResult}：</span>
-                                {result}
-                              </p>
-                            )}
-                            {core && (
-                              <p>
-                                <span className="font-medium text-gray-900">{text.digestCore}：</span>
-                                {core}
-                              </p>
-                            )}
-                          </div>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                )}
-              </section>
-            ) : (
-              articles.length > 0 && (
-                <section className="mt-8">
-                  <h3 className="text-sm font-semibold text-gray-900">
-                    {text.digestCount(articles.length)}
-                  </h3>
-                  <ul className="mt-3 divide-y divide-gray-100 rounded-lg border border-gray-200 bg-white">
-                    {articles.map((a) => (
-                      <li key={a.id}>
-                        <a
-                          href={a.source_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex flex-col gap-1 px-4 py-3 transition-colors hover:bg-gray-50 sm:flex-row sm:items-baseline sm:gap-3"
-                        >
-                          <span className="min-w-0 flex-1 text-sm leading-snug text-gray-800 group-hover:text-blue-600">
-                            {articleTitle(a)}
-                          </span>
-                          <span className="flex-shrink-0 text-xs text-gray-400">
-                            {a.source_name}
-                            {articleDate(a) ? ` · ${articleDate(a)}` : ''}
-                          </span>
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )
-            )}
+                ))}
+              </div>
+              <p className="mt-5 text-xs text-gray-400">{text.digestDisclaimer}</p>
+            </section>
+
+            {/* 分隔 */}
+            <hr className="my-10 border-gray-200" />
+
+            {/* 本期论文 */}
+            <section>
+              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                {text.digestHighlightsTitle}
+                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                  {interest.trim()
+                    ? text.digestInterestMatched(filteredHighlights.length)
+                    : (digest.article_count || highlights.length)}
+                </span>
+              </h3>
+
+              {filteredHighlights.length === 0 ? (
+                <p className="mt-4 rounded-xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-400">
+                  {text.digestNoMatch}
+                </p>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  {filteredHighlights.map((h) => {
+                    const title = articleTitle(h.article)
+                    const date = articleDate(h.article)
+                    const result = displayLanguage === 'zh' ? h.result_zh : (h.result_en || h.result_zh)
+                    const core = displayLanguage === 'zh' ? h.core_zh : (h.core_en || h.core_zh)
+                    return (
+                      <article
+                        key={h.article_id}
+                        className="rounded-xl border border-gray-200 bg-white p-5 transition-all hover:border-gray-300 hover:shadow-sm"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          {h.article?.source_url ? (
+                            <a
+                              href={h.article.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[15px] font-semibold leading-snug text-blue-700 underline decoration-blue-300/70 underline-offset-[3px] transition-colors hover:text-blue-900 hover:decoration-blue-500"
+                            >
+                              {title}
+                            </a>
+                          ) : (
+                            <span className="text-[15px] font-semibold leading-snug text-gray-900">{title}</span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-gray-400">
+                          {h.article?.source_name}
+                          {date ? ` · ${date}` : ''}
+                        </p>
+                        <div className="mt-3 space-y-2">
+                          {result && (
+                            <p className="text-sm leading-relaxed text-gray-700">
+                              <span className="mr-1.5 inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                                {text.digestResult}
+                              </span>
+                              {result}
+                            </p>
+                          )}
+                          {core && (
+                            <p className="text-sm leading-relaxed text-gray-700">
+                              <span className="mr-1.5 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                                {text.digestCore}
+                              </span>
+                              {core}
+                            </p>
+                          )}
+                        </div>
+                      </article>
+                    )
+                  })}
+                </div>
+              )}
+            </section>
           </>
         )}
       </main>
