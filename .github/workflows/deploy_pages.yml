@@ -33,6 +33,9 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: 移除 API 路由（静态导出不支持）
+        run: rm -rf web/src/app/api
+
       - name: 构建静态站点
         working-directory: web
         env:

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
@@ -13,6 +13,15 @@ const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey)
 const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAnonKey as string) : null
 
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
+const INTEREST_KEY = 'digest_interest'
+const INTEREST_CACHE_KEY = 'digest_interest_cache'
+
+type InterestResult = {
+  interest: string
+  week_start: string
+  overview_zh: string
+  overview_en: string
+}
 
 const formatPeriod = (from: string, to: string, language: DisplayLanguage) => {
   const locale = language === 'zh' ? 'zh-CN' : 'en-US'
@@ -22,39 +31,6 @@ const formatPeriod = (from: string, to: string, language: DisplayLanguage) => {
     language === 'zh' ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' }
   )
   return `${fromDate} — ${toDate}`
-}
-
-// 兴趣同义词表：把常见兴趣词展开成一组可匹配的关键词
-const INTEREST_SYNONYMS: Record<string, string[]> = {
-  ai: ['ai', '人工智能', '机器人', '编程', '计算思维', '机器学习', '大模型', '智能', '算法', '数字化', 'artificial intelligence', 'robot', 'coding', 'computational', 'technology', 'digital'],
-  教育: ['教育', '教学', '学习', '教师', '课程', '课堂', '学前', '幼儿', '幼儿园', 'education', 'teaching', 'learning', 'teacher', 'curriculum', 'school', 'classroom'],
-  游戏: ['游戏', '玩耍', '玩', 'play', 'game', 'pretend'],
-  家庭: ['家庭', '家长', '父母', '亲子', '养育', '照护', 'family', 'parent', 'caregiver', 'home'],
-  情绪: ['情绪', '情感', '社会情感', '执行功能', '自我调节', 'emotion', 'socioemotional', 'self-regulation', 'executive function'],
-  语言: ['语言', '阅读', '识字', '读写', '双语', 'language', 'literacy', 'reading', 'vocabulary', 'bilingual', 'translanguaging'],
-  数学: ['数学', 'stem', '科学', 'math', 'science'],
-  健康: ['健康', '睡眠', '营养', '身体', 'health', 'sleep', 'nutrition', 'physical'],
-  特殊教育: ['特殊教育', '自闭', '孤独症', '残障', '发展迟缓', '融合', 'special education', 'autism', 'disability', 'inclusion', 'inclusive'],
-  贫困: ['贫困', '贫穷', '经济', '弱势', 'poverty', 'economic', 'low-income', 'disadvantaged'],
-  教师: ['教师', '师资', '教师专业', 'teacher', 'teaching', 'workforce'],
-  政策: ['政策', '治理', '监管', 'policy', 'governance', 'regulation'],
-}
-
-function expandInterestTokens(input: string): string[][] {
-  const tokens = input.split(/[和与及、，,;；\s/]+/).map((t) => t.trim().toLowerCase()).filter(Boolean)
-  return tokens.map((token) => {
-    const exact = Object.entries(INTEREST_SYNONYMS).find(([k]) => k.toLowerCase() === token)
-    if (exact) return exact[1]
-    for (const [key, synonyms] of Object.entries(INTEREST_SYNONYMS)) {
-      if (token.includes(key.toLowerCase()) || key.toLowerCase().includes(token)) return synonyms
-    }
-    return [token]
-  })
-}
-
-function matchesInterest(text: string, groups: string[][]): boolean {
-  const lower = text.toLowerCase()
-  return groups.every((group) => group.some((word) => lower.includes(word.toLowerCase())))
 }
 
 function renderOverviewLinks(text: string, orderedArticles: (Article | undefined)[]): ReactNode {
@@ -96,12 +72,25 @@ export default function HomePage() {
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
   const [interest, setInterest] = useState('')
+  const [interestResult, setInterestResult] = useState<InterestResult | null>(null)
+  const [generating, setGenerating] = useState(false)
+  const [interestError, setInterestError] = useState(false)
   const [loading, setLoading] = useState(true)
+  const refreshedForWeek = useRef<string | null>(null)
   const text = UI_TEXT[displayLanguage]
 
   useEffect(() => {
     const saved = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
     if (saved === 'zh' || saved === 'en') setDisplayLanguage(saved)
+    try {
+      const savedInterest = localStorage.getItem(INTEREST_KEY)
+      if (savedInterest) setInterest(savedInterest)
+      const cached = localStorage.getItem(INTEREST_CACHE_KEY)
+      if (cached && savedInterest) {
+        const parsed = JSON.parse(cached) as InterestResult
+        if (parsed.interest === savedInterest) setInterestResult(parsed)
+      }
+    } catch {}
   }, [])
 
   useEffect(() => {
@@ -155,6 +144,63 @@ export default function HomePage() {
     try { localStorage.setItem(DISPLAY_LANGUAGE_KEY, language) } catch {}
   }
 
+  const generateInterest = useCallback(async (value: string) => {
+    const v = value.trim()
+    if (!v) return
+    setGenerating(true)
+    setInterestError(false)
+    try {
+      const resp = await fetch('/api/generate/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ interest: v }),
+      })
+      const data = await resp.json()
+      if (!resp.ok || data.error) throw new Error(data.error || 'failed')
+      const result: InterestResult = {
+        interest: v,
+        week_start: data.week_start,
+        overview_zh: data.overview_zh,
+        overview_en: data.overview_en,
+      }
+      setInterest(v)
+      setInterestResult(result)
+      try {
+        localStorage.setItem(INTEREST_KEY, v)
+        localStorage.setItem(INTEREST_CACHE_KEY, JSON.stringify(result))
+      } catch {}
+    } catch (error) {
+      console.error('interest generate error:', error)
+      setInterestError(true)
+    } finally {
+      setGenerating(false)
+    }
+  }, [])
+
+  const clearInterest = () => {
+    setInterest('')
+    setInterestResult(null)
+    setInterestError(false)
+    refreshedForWeek.current = null
+    try {
+      localStorage.removeItem(INTEREST_KEY)
+      localStorage.removeItem(INTEREST_CACHE_KEY)
+    } catch {}
+  }
+
+  // 有已保存兴趣、但缓存与本周不符时，自动重新生成（每周只触发一次）
+  useEffect(() => {
+    if (!digest || !interest.trim() || generating) return
+    if (refreshedForWeek.current === digest.week_start) return
+    const isFresh =
+      interestResult &&
+      interestResult.interest === interest.trim() &&
+      interestResult.week_start === digest.week_start
+    if (isFresh) return
+    refreshedForWeek.current = digest.week_start
+    void generateInterest(interest.trim())
+  }, [digest, interest, interestResult, generating, generateInterest])
+
   const orderedArticles = useMemo(() => {
     const byId = new Map(articles.map((a) => [a.id, a]))
     return (digest?.article_ids ?? []).map((id) => byId.get(id))
@@ -165,19 +211,6 @@ export default function HomePage() {
     return (digest?.highlights ?? []).map((h) => ({ ...h, article: byId.get(h.article_id) }))
   }, [digest, articles])
 
-  const interestGroups = useMemo(() => expandInterestTokens(interest), [interest])
-  const filteredHighlights = useMemo(() => {
-    if (!interest.trim()) return highlights
-    return highlights.filter((h) => {
-      const searchable = [
-        h.article?.title_zh, h.article?.title_original,
-        h.result_zh, h.core_zh, h.result_en, h.core_en,
-        (h.article?.topic_tags ?? []).join(' '),
-      ].filter(Boolean).join(' ')
-      return matchesInterest(searchable, interestGroups)
-    })
-  }, [highlights, interest, interestGroups])
-
   const overview = displayLanguage === 'zh'
     ? digest?.summary_zh
     : (digest?.summary_en || digest?.summary_zh)
@@ -185,6 +218,15 @@ export default function HomePage() {
   const overviewParagraphs = useMemo(
     () => (overview ?? '').split(/\n+/).map((p) => p.trim()).filter(Boolean),
     [overview]
+  )
+
+  const interestOverview = interestResult
+    ? (displayLanguage === 'zh' ? interestResult.overview_zh : (interestResult.overview_en || interestResult.overview_zh))
+    : ''
+
+  const interestParagraphs = useMemo(
+    () => interestOverview.split(/\n+/).map((p) => p.trim()).filter(Boolean),
+    [interestOverview]
   )
 
   const articleTitle = (a: Article | undefined) => {
@@ -283,8 +325,14 @@ export default function HomePage() {
               {displayLanguage === 'zh' ? 'AI 自动生成' : 'AI-generated'}
             </p>
 
-            {/* 兴趣筛选 */}
-            <div className="mt-6 flex items-center gap-2">
+            {/* 兴趣生成 */}
+            <form
+              className="mt-6 flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                void generateInterest(interest)
+              }}
+            >
               <div className="relative flex-1">
                 <svg
                   aria-hidden="true"
@@ -308,18 +356,49 @@ export default function HomePage() {
                   className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
                 />
               </div>
-              {interest && (
+              {interestResult ? (
                 <button
                   type="button"
-                  onClick={() => setInterest('')}
+                  onClick={clearInterest}
                   className="flex-shrink-0 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-50 hover:text-gray-900"
                 >
                   {text.digestInterestClear}
                 </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={generating || !interest.trim()}
+                  className="flex-shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {text.digestInterestGenerate}
+                </button>
               )}
-            </div>
+            </form>
 
-            {/* 本周概览 */}
+            {generating && (
+              <p className="mt-3 text-sm text-gray-400">{text.digestGenerating}</p>
+            )}
+            {interestError && !generating && (
+              <p className="mt-3 text-sm text-red-600">{text.digestInterestError}</p>
+            )}
+
+            {/* 兴趣概览 */}
+            {interestResult && !generating && interestOverview && (
+              <section className="mt-10 rounded-xl border border-blue-100 bg-blue-50/50 p-5 sm:p-6">
+                <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-600">
+                  {text.digestInterestSectionTitle(interestResult.interest)}
+                </h3>
+                <div className="mt-3 space-y-4">
+                  {interestParagraphs.map((paragraph, i) => (
+                    <p key={i} className="text-[16px] leading-8 text-gray-800">
+                      {renderOverviewLinks(paragraph, orderedArticles)}
+                    </p>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* 综合概览 */}
             <section className="mt-10">
               <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
                 {text.digestOverviewTitle}
@@ -337,24 +416,22 @@ export default function HomePage() {
             {/* 分隔 */}
             <hr className="my-10 border-gray-200" />
 
-            {/* 本期论文 */}
+            {/* 本期内容 */}
             <section>
               <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
                 {text.digestHighlightsTitle}
                 <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                  {interest.trim()
-                    ? text.digestInterestMatched(filteredHighlights.length)
-                    : (digest.article_count || highlights.length)}
+                  {digest.article_count || highlights.length}
                 </span>
               </h3>
 
-              {filteredHighlights.length === 0 ? (
+              {highlights.length === 0 ? (
                 <p className="mt-4 rounded-xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-400">
-                  {text.digestNoMatch}
+                  {text.digestEmpty}
                 </p>
               ) : (
                 <div className="mt-4 space-y-3">
-                  {filteredHighlights.map((h) => {
+                  {highlights.map((h) => {
                     const title = articleTitle(h.article)
                     const date = articleDate(h.article)
                     const result = displayLanguage === 'zh' ? h.result_zh : (h.result_en || h.result_zh)

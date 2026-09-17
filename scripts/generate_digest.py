@@ -26,7 +26,8 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 
 TZ = ZoneInfo("Asia/Shanghai")
-MODULE = "research_frontier"
+MODULES = ["research_frontier", "research_practice", "policy"]
+MODULE_LABEL = {"research_frontier": "论文", "research_practice": "实践", "policy": "政策"}
 MAX_ARTICLES = int(os.environ.get("DIGEST_MAX_ARTICLES", "40"))
 MIN_ARTICLES = int(os.environ.get("DIGEST_MIN_ARTICLES", "3"))
 ABSTRACT_CHAR_LIMIT = int(os.environ.get("DIGEST_ABSTRACT_CHAR_LIMIT", "260"))
@@ -65,9 +66,9 @@ def load_week_articles(week_start: dt.date, week_end: dt.date) -> list[dict]:
             supabase.table("articles")
             .select(
                 "id,title_original,title_zh,abstract_original,abstract_zh,"
-                "source_name,source_url,published_at,fetched_at"
+                "source_name,source_url,module,published_at,fetched_at"
             )
-            .eq("module", MODULE)
+            .in_("module", MODULES)
             .gte("fetched_at", start_iso)
             .lte("fetched_at", end_iso)
             .order("published_at", desc=True, nullsfirst=False)
@@ -101,9 +102,10 @@ def build_article_listing(articles: list[dict]) -> str:
         title = display_title(a)
         abstract = display_abstract(a)
         source = (a.get("source_name") or "").strip()
+        kind = MODULE_LABEL.get(a.get("module") or "", "")
         line = f"{i}. {title}"
-        if source:
-            line += f"（{source}）"
+        if source or kind:
+            line += f"（{source}·{kind}）" if source and kind else f"（{source or kind}）"
         if abstract:
             line += f"\n   摘要：{abstract}"
         lines.append(line)
