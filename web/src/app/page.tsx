@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
 import { UI_TEXT } from '@/lib/i18n'
+import { useBookmarks } from '@/lib/useBookmarks'
 import type { Article, DigestHighlight, DisplayLanguage, WeeklyDigest } from '@/lib/types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -78,6 +79,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const refreshedForWeek = useRef<string | null>(null)
   const text = UI_TEXT[displayLanguage]
+  const { bookmarks, toggleBookmark } = useBookmarks(supabase)
 
   useEffect(() => {
     const saved = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
@@ -256,6 +258,30 @@ export default function HomePage() {
 
           <div className="flex flex-shrink-0 items-center gap-2">
             <Link
+              href="/browse/?favorites=1"
+              aria-label={text.viewFavorites(bookmarks.size)}
+              title={text.favorites}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 sm:px-3"
+            >
+              <svg
+                aria-hidden="true"
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill={bookmarks.size > 0 ? 'currentColor' : 'none'}
+                stroke="currentColor"
+                strokeWidth="2"
+                className={bookmarks.size > 0 ? 'text-amber-500' : ''}
+              >
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
+              <span className="hidden sm:inline">{text.favorites}</span>
+              {bookmarks.size > 0 && (
+                <span className="min-w-4 text-center text-[11px] text-gray-400">{bookmarks.size}</span>
+              )}
+            </Link>
+
+            <Link
               href="/browse"
               className="flex h-9 items-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900"
             >
@@ -269,22 +295,22 @@ export default function HomePage() {
             >
               {([
                 ['zh', '中文', '中'],
-                ['en', 'English', 'EN'],
-              ] as const).map(([value, label, compactLabel]) => (
+                ['en', 'English', '英'],
+              ] as const).map(([value, label, shortLabel]) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => changeDisplayLanguage(value)}
                   aria-pressed={displayLanguage === value}
                   aria-label={text.useLanguage(label)}
-                  className={`h-8 min-w-10 rounded-md px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:min-w-[4.25rem] ${
+                  title={label}
+                  className={`h-8 w-8 rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     displayLanguage === value
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-500 hover:text-gray-800'
                   }`}
                 >
-                  <span className="sm:hidden">{compactLabel}</span>
-                  <span className="hidden sm:inline">{label}</span>
+                  {shortLabel}
                 </button>
               ))}
             </div>
@@ -436,6 +462,7 @@ export default function HomePage() {
                     const date = articleDate(h.article)
                     const result = displayLanguage === 'zh' ? h.result_zh : (h.result_en || h.result_zh)
                     const core = displayLanguage === 'zh' ? h.core_zh : (h.core_en || h.core_zh)
+                    const saved = bookmarks.has(h.article_id)
                     return (
                       <article
                         key={h.article_id}
@@ -454,6 +481,30 @@ export default function HomePage() {
                           ) : (
                             <span className="text-[15px] font-semibold leading-snug text-gray-900">{title}</span>
                           )}
+                          <button
+                            type="button"
+                            onClick={() => toggleBookmark(h.article_id)}
+                            aria-pressed={saved}
+                            aria-label={saved ? text.removeBookmark : text.addBookmark}
+                            title={saved ? text.removeBookmark : text.addBookmark}
+                            className={`-mr-1 -mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                              saved
+                                ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600'
+                                : 'text-gray-300 hover:bg-gray-50 hover:text-gray-500'
+                            }`}
+                          >
+                            <svg
+                              aria-hidden="true"
+                              width="16"
+                              height="16"
+                              viewBox="0 0 24 24"
+                              fill={saved ? 'currentColor' : 'none'}
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                            </svg>
+                          </button>
                         </div>
                         <p className="mt-1 text-xs text-gray-400">
                           {h.article?.source_name}

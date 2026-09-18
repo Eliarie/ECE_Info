@@ -7,6 +7,7 @@ import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
 import Pagination from '@/components/Pagination'
 import { getTopicLabel, TOPICS, UI_TEXT } from '@/lib/i18n'
+import { useBookmarks } from '@/lib/useBookmarks'
 import type { Article, DisplayLanguage, Module, Region } from '@/lib/types'
 import coreJournals from '@/config/core-journals.json'
 
@@ -16,7 +17,6 @@ const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey)
 const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAnonKey as string) : null
 
 const PAGE_SIZE = 8
-const BOOKMARK_DEVICE_KEY = 'bookmark_device_id'
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 
 // 首页以国内政策库为主；政策列表先显示中央文件，
@@ -83,23 +83,6 @@ const buildCoreJournalSetByRegion = (): Record<Region, Set<string>> => {
 // 核心期刊优先排序：名单由配置文件驱动（按国内/国际分开）
 const CORE_JOURNAL_NAMES_BY_REGION = buildCoreJournalSetByRegion()
 
-const getBookmarkDeviceId = () => {
-  const params = new URLSearchParams(window.location.search)
-  const sharedId = params.get('bookmark_sync')
-  if (sharedId && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sharedId)) {
-    localStorage.setItem(BOOKMARK_DEVICE_KEY, sharedId)
-    params.delete('bookmark_sync')
-    const clean = `${window.location.pathname}${params.size ? `?${params}` : ''}${window.location.hash}`
-    window.history.replaceState({}, '', clean)
-  }
-  let deviceId = localStorage.getItem(BOOKMARK_DEVICE_KEY)
-  if (!deviceId) {
-    deviceId = crypto.randomUUID()
-    localStorage.setItem(BOOKMARK_DEVICE_KEY, deviceId)
-  }
-  return deviceId
-}
-
 export default function HomePage() {
   const [module, setModule] = useState<Module>('research_frontier')
   const [region, setRegion] = useState<Region>('international')
@@ -120,19 +103,16 @@ export default function HomePage() {
   const text = UI_TEXT[displayLanguage]
   const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
   const resultsTopRef = useRef<HTMLDivElement | null>(null)
-  const bookmarkDeviceIdRef = useRef<string | null>(null)
-  const [bookmarks, setBookmarks] = useState<Set<string>>(() => {
-    if (typeof window === 'undefined') return new Set()
-    try {
-      const saved = localStorage.getItem('bookmarks')
-      return saved ? new Set(JSON.parse(saved)) : new Set()
-    } catch { return new Set() }
-  })
+  const { bookmarks, toggleBookmark, shareBookmarkSync } = useBookmarks(supabase)
 
   useEffect(() => {
     const savedLanguage = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
     if (savedLanguage === 'zh' || savedLanguage === 'en') {
       setDisplayLanguage(savedLanguage)
+    }
+    // 从速览页的「收藏」入口进来时直接打开收藏视图
+    if (new URLSearchParams(window.location.search).get('favorites') === '1') {
+      setShowFavorites(true)
     }
   }, [])
 
@@ -209,43 +189,6 @@ export default function HomePage() {
   }, [module, region])
 
   useEffect(() => {
-    let deviceId: string
-    try {
-      deviceId = getBookmarkDeviceId()
-      bookmarkDeviceIdRef.current = deviceId
-    } catch (error) {
-      console.error('Bookmark device initialization error:', error)
-      return
-    }
-    if (!supabase) return
-    let cancelled = false
-    const synchronizeBookmarks = async () => {
-      try {
-        const { data, error } = await supabase.rpc('get_saved_article_ids', { p_device_id: deviceId })
-        if (error) console.error('Supabase bookmark read error:', error)
-        const remoteIds = (data ?? []).map((row: { article_id: string }) => row.article_id)
-        const merged = new Set([...bookmarks, ...remoteIds])
-        if (!cancelled) {
-          setBookmarks(merged)
-          localStorage.setItem('bookmarks', JSON.stringify(Array.from(merged)))
-        }
-        for (const articleId of bookmarks) {
-          const { error: saveError } = await supabase.rpc('set_article_saved', {
-            p_device_id: deviceId,
-            p_article_id: articleId,
-            p_saved: true,
-          })
-          if (saveError) console.error('Supabase bookmark sync error:', saveError)
-        }
-      } catch (error) {
-        console.error('Bookmark device initialization error:', error)
-      }
-    }
-    void synchronizeBookmarks()
-    return () => { cancelled = true }
-  }, [])
-
-  useEffect(() => {
     if (!showFavorites) return
     if (!supabase || bookmarks.size === 0) {
       setFavoriteArticles([])
@@ -288,37 +231,8 @@ export default function HomePage() {
     }
   }, [sourceDropdownOpen])
 
-  const toggleBookmark = (id: string) => {
-    const next = new Set(bookmarks)
-    const shouldSave = !next.has(id)
-    if (shouldSave) next.add(id)
-    else next.delete(id)
-    setBookmarks(next)
-    try { localStorage.setItem('bookmarks', JSON.stringify(Array.from(next))) } catch {}
-
-    const deviceId = bookmarkDeviceIdRef.current
-    if (supabase && deviceId) {
-      void supabase.rpc('set_article_saved', {
-        p_device_id: deviceId,
-        p_article_id: id,
-        p_saved: shouldSave,
-      }).then(({ error }) => {
-        if (error) console.error('Supabase bookmark sync error:', error)
-      })
-    }
-  }
-
-  const shareBookmarkSync = async () => {
-    const deviceId = bookmarkDeviceIdRef.current ?? getBookmarkDeviceId()
-    const url = new URL(window.location.origin + window.location.pathname)
-    url.searchParams.set('bookmark_sync', deviceId)
-    const link = url.toString()
-    setSyncLink(link)
-    try {
-      await navigator.clipboard.writeText(link)
-    } catch {
-      // 复制权限不可用时仍显示页面内的链接，不依赖浏览器弹窗。
-    }
+  const openBookmarkSync = async () => {
+    setSyncLink(await shareBookmarkSync())
   }
 
   const changeDisplayLanguage = (language: DisplayLanguage) => {
@@ -520,7 +434,7 @@ export default function HomePage() {
 
             <button
               type="button"
-              onClick={() => { void shareBookmarkSync() }}
+              onClick={() => { void openBookmarkSync() }}
               aria-label={text.syncFavorites}
               title={text.syncFavorites}
               className="flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3"
@@ -538,22 +452,22 @@ export default function HomePage() {
             >
               {([
                 ['zh', '中文', '中'],
-                ['en', 'English', 'EN'],
-              ] as const).map(([value, label, compactLabel]) => (
+                ['en', 'English', '英'],
+              ] as const).map(([value, label, shortLabel]) => (
                 <button
                   key={value}
                   type="button"
                   onClick={() => changeDisplayLanguage(value)}
                   aria-pressed={displayLanguage === value}
                   aria-label={text.useLanguage(label)}
-                  className={`h-8 min-w-10 rounded px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:min-w-[4.25rem] ${
+                  title={label}
+                  className={`h-8 w-8 rounded text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                     displayLanguage === value
                       ? 'bg-gray-900 text-white shadow-sm'
                       : 'text-gray-500 hover:bg-white hover:text-gray-800'
                   }`}
                 >
-                  <span className="sm:hidden">{compactLabel}</span>
-                  <span className="hidden sm:inline">{label}</span>
+                  {shortLabel}
                 </button>
               ))}
             </div>

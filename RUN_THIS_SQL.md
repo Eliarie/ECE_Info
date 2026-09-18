@@ -9,7 +9,38 @@
 
 ---
 
-## ① 每周研究速览表（本次新增，必须先执行）
+## ① 跨设备收藏读取函数（待执行，收藏同步缺它就只在本机生效）
+
+创建 `get_saved_article_ids`，让网站能按同步码读回该设备组的收藏。
+写入用的 `set_article_saved` 已经在库里，缺的只是读取这一半：
+收藏在本机正常，但换设备打开同步链接时读不回来，浏览器控制台会报 `PGRST202`。
+
+```sql
+create or replace function public.get_saved_article_ids(p_device_id uuid)
+returns table(article_id uuid)
+language sql
+security definer
+set search_path = ''
+stable
+as $$
+    select saved.article_id
+    from public.user_saved_articles as saved
+    where saved.device_id = p_device_id
+    order by saved.created_at desc;
+$$;
+
+revoke all on function public.get_saved_article_ids(uuid) from public;
+grant execute on function public.get_saved_article_ids(uuid) to anon, authenticated;
+```
+
+> 完整文件见 `supabase/migrations/20260810090000_add_cross_device_saved_article_read.sql`。
+
+该函数只按给定同步码返回对应的文章 ID，不开放 `user_saved_articles` 整表读权限。
+执行后刷新网站，控制台不再报 `PGRST202` 即为成功。
+
+---
+
+## ② 每周研究速览表（已执行，若是新库需先执行）
 
 创建 `weekly_digests` 表，用于存放每周自动生成的「本周速览」。
 
@@ -49,7 +80,7 @@ create policy "weekly digests readable and writable by anon"
 
 ---
 
-## ② 引用数字段（历史迁移，若已执行可跳过）
+## ③ 引用数字段（历史迁移，若已执行可跳过）
 
 ```sql
 -- 新增引用数字段
