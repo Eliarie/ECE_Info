@@ -16,11 +16,13 @@ type DigestArticle = {
 }
 
 async function generateInterestOverview(
-  articles: DigestArticle[],
+  articles: (DigestArticle | undefined)[],
   interest: string
 ): Promise<{ overview_zh: string; overview_en: string }> {
+  // 编号必须与 digest.article_ids 的位置一致（前端按位置把 [短语](编号) 映射到卡片），缺失的条目跳过但不重排
   const listing = articles
     .map((a, i) => {
+      if (!a) return null
       const title = a.title_zh || a.title_original
       const abstract = (a.abstract_zh || a.abstract_original || '').slice(0, 260)
       const source = a.source_name || ''
@@ -29,6 +31,7 @@ async function generateInterestOverview(
       if (abstract) line += `\n   摘要：${abstract}`
       return line
     })
+    .filter(Boolean)
     .join('\n')
 
   const prompt = `你是学前教育领域的研究助理。以下是本周收录的内容（论文/实践/政策）。用户感兴趣的主题是：「${interest}」。
@@ -112,7 +115,10 @@ export async function POST(request: Request) {
     }
 
     const byId = new Map((articles ?? []).map((a) => [a.id, a]))
-    const ordered = ids.map((id) => byId.get(id)).filter(Boolean) as DigestArticle[]
+    const ordered = ids.map((id) => byId.get(id) as DigestArticle | undefined)
+    if (!ordered.some(Boolean)) {
+      return NextResponse.json({ error: '本期无内容' }, { status: 404 })
+    }
 
     const overview = await generateInterestOverview(ordered, interest)
 

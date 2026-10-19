@@ -40,6 +40,20 @@ grant execute on function public.get_saved_article_ids(uuid) to anon, authentica
 
 ---
 
+## ①-2 兴趣速览存档（待执行，不执行则兴趣只保存在本机浏览器）
+
+首页可以订阅多个兴趣，每个兴趣按周存档生成的速览，并与收藏共用同一个同步码跨设备同步。
+新建 `user_interests`、`user_interest_digests` 两张表和
+`get_user_interests` / `save_interest_digest` / `remove_user_interest` 三个函数。
+
+打开 `supabase/migrations/20261019090000_add_user_interest_digests.sql`，全选复制，粘贴到 SQL Editor 运行即可（可重复执行）。
+
+两张表不开放直接读写，只能经这三个函数按同步码访问；每个同步码最多 30 个兴趣。
+执行前已在本机生成的兴趣速览，会在下次打开网站时自动补传上去。
+执行后刷新网站，控制台不再报 `get_user_interests` 的 `PGRST202` 即为成功。
+
+---
+
 ## ② 每周研究速览表（已执行，若是新库需先执行）
 
 创建 `weekly_digests` 表，用于存放每周自动生成的「本周速览」。
