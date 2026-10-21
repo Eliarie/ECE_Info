@@ -1,6 +1,6 @@
 # 交接进度
 
-更新于 2026-10-21，代码提交 `8105dbf`，之后只提交了本文件；main 比 origin/main 超前 2 个提交，尚未推送。
+更新于 2026-10-21，代码提交 `8105dbf`，已推送到 GitHub main。
 
 ## 当前在做
 
@@ -24,7 +24,7 @@
 3. [ ] 执行 ①-3（`20261019120000_add_interest_digest_job_rpcs.sql`）
 4. [ ] 把口令存进 GitHub Secret（仓库现有 Secret 里还没有 `INTEREST_DIGEST_JOB_TOKEN`）：
    `printf '%s' "$(grep '^INTEREST_DIGEST_JOB_TOKEN=' .env | cut -d= -f2-)" | gh secret set INTEREST_DIGEST_JOB_TOKEN --repo Eliarie/ECE_Info`
-5. [ ] 推送 main 到 GitHub
+5. [x] 推送 main 到 GitHub（2026-10-21）
 6. [ ] Actions →「每周研究速览」→ Run workflow，勾选 `dry_run` + `interests_only` 演练；
    日志出现「订阅中的兴趣 N 个：待生成 …」即成功
 7. [ ] 只勾 `interests_only` 再跑一次，给最新一期补齐兴趣速览
