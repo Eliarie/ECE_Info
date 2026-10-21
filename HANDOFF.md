@@ -24,13 +24,13 @@
 - 兴趣概览的提示词在脚本和 `web/src/app/api/generate/route.ts` 各有一份，**改一边要同步另一边**（2026-10-21 核对过一致）。
 - 用户（2026-10-21）：兴趣存档不必每周都有，能看到最近两三周就够。所以第 3、4、6、7 步是「锦上添花」，不急。
 
-## 需要用户手动做的（按顺序）
+## 需要用户手动做的（按顺序；必做的都已完成，剩下都是可选）
 
 详细说明见 `RUN_THIS_SQL.md` 的 ①、①-2、①-3。
 
 1. [x] ① `get_saved_article_ids`（收藏跨设备读取）：2026-10-21 从网站报错提示确认库里已有这个函数
-2. [ ] **①-2**（`20261019090000_add_user_interest_digests.sql`）：**必做**。没执行前兴趣和兴趣往期只存在当前浏览器里，
-   换设备、清缓存就没了；网站控制台一直报 `get_user_interests` 的 `PGRST202`（2026-10-21 仍在报）
+2. [x] ①-2（`20261019090000_add_user_interest_digests.sql`）：用户 2026-10-21 已执行；已确认 `get_user_interests` 返回 200、
+   两张兴趣表对公开密钥关闭。之后兴趣和往期概览自动存进数据库，用「全部文章 → 跨设备同步收藏」的链接在其他设备打开即可同步
 3. [ ] ①-3（`20261019120000_add_interest_digest_job_rpcs.sql`）：可选，让每周任务自动补兴趣速览
 4. [ ] 可选，配合第 3 步：把口令存进 GitHub Secret（仓库现有 Secret 里还没有 `INTEREST_DIGEST_JOB_TOKEN`）：
    `printf '%s' "$(grep '^INTEREST_DIGEST_JOB_TOKEN=' .env | cut -d= -f2-)" | gh secret set INTEREST_DIGEST_JOB_TOKEN --repo Eliarie/ECE_Info`

@@ -40,7 +40,7 @@ grant execute on function public.get_saved_article_ids(uuid) to anon, authentica
 
 ---
 
-## ①-2 兴趣速览存档（待执行，不执行则兴趣只保存在本机浏览器）
+## ①-2 兴趣速览存档（已执行，2026-10-21）
 
 首页可以订阅多个兴趣，每个兴趣按周存档生成的速览，并与收藏共用同一个同步码跨设备同步。
 新建 `user_interests`、`user_interest_digests` 两张表和
