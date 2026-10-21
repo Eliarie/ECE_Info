@@ -427,7 +427,7 @@ export default function HomePage() {
 
   const weekLabel = (weekStart: string) => {
     const period = formatPeriod(weekStart, weekEndOf(weekStart), displayLanguage)
-    return latestDigest && weekStart === latestDigest.week_start ? `${text.digestInterestThisWeek} · ${period}` : period
+    return latestDigest && weekStart === latestDigest.week_start ? `${text.digestLatestWeek} · ${period}` : period
   }
 
   const articleTitle = (a: Article | undefined) => {
