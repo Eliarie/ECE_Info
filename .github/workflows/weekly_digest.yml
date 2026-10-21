@@ -4,6 +4,15 @@ on:
   schedule:
     - cron: '30 19 * * 0'  # 北京时间每周一凌晨 3:30（UTC+8，即周日 UTC 19:30）
   workflow_dispatch:       # 支持手动触发
+    inputs:
+      dry_run:
+        description: '演练：只打印将要生成什么，不调用模型、不写库'
+        type: boolean
+        default: false
+      interests_only:
+        description: '只为最新一期补兴趣速览，不重新生成本周速览'
+        type: boolean
+        default: false
 
 concurrency:
   group: ece-weekly-digest
@@ -24,9 +33,16 @@ jobs:
       - name: 安装依赖
         run: pip install -r requirements.txt
 
-      - name: 生成本周速览
+      - name: 生成本周速览 + 兴趣速览
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: python scripts/generate_digest.py
+          INTEREST_DIGEST_JOB_TOKEN: ${{ secrets.INTEREST_DIGEST_JOB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          INTERESTS_ONLY: ${{ inputs.interests_only }}
+        run: |
+          args=()
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          if [ "$INTERESTS_ONLY" = "true" ]; then args+=(--interests-only); fi
+          python scripts/generate_digest.py "${args[@]}"

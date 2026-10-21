@@ -54,6 +54,32 @@ grant execute on function public.get_saved_article_ids(uuid) to anon, authentica
 
 ---
 
+## ①-3 每周任务自动补兴趣速览（待执行，需先执行 ①-2）
+
+不执行时，兴趣速览只在某台设备打开首页时才生成，没打开的那几周存档会空着。
+执行后，每周一的「每周研究速览」任务写完本周速览，会顺带给每个订阅中的兴趣生成本周概览：
+同一个兴趣文本只调用一次模型，再写给所有订阅它的同步码；已经有本周概览的订阅跳过，单个兴趣失败不影响其他。
+
+GitHub Actions 用的是 anon key，碰不到兴趣表，所以新加两个只认任务口令的函数
+`list_interest_digest_targets` / `save_interest_digest_for_devices`（和旧文献放流的口令做法一样，库里只存口令的 sha256）。
+口令明文已生成在本机 `.env` 的 `INTEREST_DIGEST_JOB_TOKEN`（`.env` 不进 git）。
+
+1. 打开 `supabase/migrations/20261019120000_add_interest_digest_job_rpcs.sql`，全选复制，粘贴到 SQL Editor 运行（可重复执行）。
+2. 把口令存进 GitHub Secret（在仓库根目录运行，不会打印口令）：
+
+   ```bash
+   printf '%s' "$(grep '^INTEREST_DIGEST_JOB_TOKEN=' .env | cut -d= -f2-)" | gh secret set INTEREST_DIGEST_JOB_TOKEN --repo Eliarie/ECE_Info
+   ```
+
+3. 演练确认（只读，不调用模型、不写库）：GitHub → Actions →「每周研究速览」→ Run workflow，勾选 `dry_run` 和 `interests_only`。
+   日志出现「订阅中的兴趣 N 个：待生成 …」即为成功；仓库公开，日志里只显示编号和数量，不显示兴趣原文和同步码。
+   本机也可以演练（会显示兴趣原文）：`set -a && source .env && set +a && python3 scripts/generate_digest.py --interests-only --dry-run`
+
+想立刻给最新一期补齐：Run workflow 只勾选 `interests_only`。
+如果口令丢了或想换：重新生成一个，把迁移文件里两处 sha256 换成新口令的哈希，重跑第 1、2 步。
+
+---
+
 ## ② 每周研究速览表（已执行，若是新库需先执行）
 
 创建 `weekly_digests` 表，用于存放每周自动生成的「本周速览」。
