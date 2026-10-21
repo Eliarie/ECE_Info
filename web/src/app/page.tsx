@@ -35,6 +35,21 @@ const weekEndOf = (weekStart: string) => {
   return date.toISOString().slice(0, 10)
 }
 
+const DIGEST_WEEKS_LIMIT = 52 // 期数下拉框最多列出最近一年
+
+// 按 article_ids 的顺序取回该期论文，编号 1..N 才能和概览里的 [短语](编号) 对上
+const fetchDigestArticles = async (row: WeeklyDigest): Promise<Article[]> => {
+  const ids = Array.isArray(row.article_ids) ? row.article_ids : []
+  if (!supabase || ids.length === 0) return []
+  const { data, error } = await supabase.from('articles').select('*').in('id', ids)
+  if (error) {
+    console.error('digest articles query error:', error)
+    return []
+  }
+  const order = new Map(ids.map((id, i) => [id, i]))
+  return ((data ?? []) as Article[]).sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+}
+
 const toParagraphs = (value: string | null | undefined) =>
   (value ?? '').split(/\n+/).map((p) => p.trim()).filter(Boolean)
 
@@ -101,8 +116,16 @@ type HighlightWithArticle = DigestHighlight & { article?: Article }
 
 export default function HomePage() {
   const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
+  // latestDigest：最新一期，兴趣速览总是基于它生成；digest / articles：页面上正在看的那一期
+  const [latestDigest, setLatestDigest] = useState<WeeklyDigest | null>(null)
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
+  const [digestWeeks, setDigestWeeks] = useState<string[]>([])
+  const [pendingWeek, setPendingWeek] = useState<string | null>(null) // 正在加载的那一期，下拉框先停在它上面
+  const switchingWeek = pendingWeek !== null
+  const [weekLoadFailed, setWeekLoadFailed] = useState(false)
+  const digestCacheRef = useRef<Map<string, { digest: WeeklyDigest; articles: Article[] }>>(new Map())
+  const weekRequestRef = useRef(0)
   const [loading, setLoading] = useState(true)
   const text = UI_TEXT[displayLanguage]
   const { bookmarks, toggleBookmark } = useBookmarks(supabase)
@@ -129,43 +152,64 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!supabase) { setLoading(false); return }
-    setLoading(true)
-    supabase
-      .from('weekly_digests')
-      .select('*')
-      .order('week_start', { ascending: false })
-      .limit(1)
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('weekly_digests query error:', error)
-          setLoading(false)
-          return
-        }
-        const latest = (data ?? [])[0] ?? null
-        setDigest(latest)
-        if (latest && Array.isArray(latest.article_ids) && latest.article_ids.length > 0) {
-          supabase
-            .from('articles')
-            .select('*')
-            .in('id', latest.article_ids)
-            .then(({ data: articleData, error: articleError }) => {
-              if (articleError) {
-                console.error('digest articles query error:', articleError)
-                setArticles([])
-              } else {
-                const order = new Map((latest.article_ids as string[]).map((id, i) => [id, i]))
-                const sorted = (articleData ?? []).sort(
-                  (a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)
-                )
-                setArticles(sorted)
-              }
-              setLoading(false)
-            })
-        } else {
-          setArticles([])
-          setLoading(false)
-        }
-      })
+    const client = supabase
+    let cancelled = false
+    const load = async () => {
+      setLoading(true)
+      const [latestResult, weeksResult] = await Promise.all([
+        client.from('weekly_digests').select('*').order('week_start', { ascending: false }).limit(1),
+        client.from('weekly_digests').select('week_start').order('week_start', { ascending: false }).limit(DIGEST_WEEKS_LIMIT),
+      ])
+      if (cancelled) return
+      if (latestResult.error) {
+        console.error('weekly_digests query error:', latestResult.error)
+        setLoading(false)
+        return
+      }
+      if (weeksResult.error) console.error('digest weeks query error:', weeksResult.error)
+      const latest = ((latestResult.data ?? [])[0] ?? null) as WeeklyDigest | null
+      const list = latest ? await fetchDigestArticles(latest) : []
+      if (cancelled) return
+      if (latest) {
+        digestCacheRef.current.set(latest.week_start, { digest: latest, articles: list })
+        const weeks = (weeksResult.data ?? []).map((row) => row.week_start as string)
+        setDigestWeeks(weeks.includes(latest.week_start) ? weeks : [latest.week_start, ...weeks])
+      }
+      setLatestDigest(latest)
+      setDigest(latest)
+      setArticles(list)
+      setLoading(false)
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [])
+
+  // 切换正在看的那一期；看过的期数缓存在本页，来回切不重复请求
+  const selectDigestWeek = useCallback(async (week: string) => {
+    if (!supabase) return
+    const requestId = ++weekRequestRef.current
+    setWeekLoadFailed(false)
+    const cached = digestCacheRef.current.get(week)
+    if (cached) {
+      setPendingWeek(null)
+      setDigest(cached.digest)
+      setArticles(cached.articles)
+      return
+    }
+    setPendingWeek(week)
+    const { data, error } = await supabase.from('weekly_digests').select('*').eq('week_start', week).maybeSingle()
+    const row = data as WeeklyDigest | null
+    const list = row ? await fetchDigestArticles(row) : []
+    if (requestId !== weekRequestRef.current) return // 期间又切到了别的期
+    setPendingWeek(null)
+    if (error || !row) {
+      if (error) console.error('weekly_digests week query error:', error)
+      setWeekLoadFailed(true)
+      return
+    }
+    digestCacheRef.current.set(week, { digest: row, articles: list })
+    setDigest(row)
+    setArticles(list)
   }, [])
 
   const changeDisplayLanguage = (language: DisplayLanguage) => {
@@ -210,7 +254,7 @@ export default function HomePage() {
 
   const submitInterest = async () => {
     const value = normalizeInterest(interestInput)
-    if (!value || !digest) return
+    if (!value || !latestDigest) return
     const exists = interestEntries.some((e) => e.interest === value)
     if (!exists && interestEntries.length >= MAX_INTERESTS) {
       setInterestError('limit')
@@ -219,7 +263,7 @@ export default function HomePage() {
     selectInterest(value)
     setInterestInput('')
     if (exists) return // 已订阅：切过去即可，缺本周的话下面的自动生成会补上
-    attemptedRef.current.add(`${value}|${digest.week_start}`)
+    attemptedRef.current.add(`${value}|${latestDigest.week_start}`)
     if (!(await generateFor(value))) {
       setInterestError('failed')
       setInterestInput(value)
@@ -243,8 +287,8 @@ export default function HomePage() {
 
   // 每个已订阅的兴趣缺本周速览时自动补生成：先补正在看的，其余逐个在后台补
   useEffect(() => {
-    if (!digest || !interestsLoaded || generatingSet.size > 0) return
-    const week = digest.week_start
+    if (!latestDigest || !interestsLoaded || generatingSet.size > 0) return
+    const week = latestDigest.week_start
     const stale = interestEntries.filter(
       (e) => !e.digests.some((d) => d.week_start === week) && !attemptedRef.current.has(`${e.interest}|${week}`)
     )
@@ -255,11 +299,11 @@ export default function HomePage() {
     void generateFor(next.interest).then((ok) => {
       if (!ok) setFailedKeys((prev) => new Set(prev).add(key))
     })
-  }, [digest, interestsLoaded, interestEntries, activeInterest, generatingSet, failedKeys, generateFor])
+  }, [latestDigest, interestsLoaded, interestEntries, activeInterest, generatingSet, failedKeys, generateFor])
 
   const retryThisWeek = (interest: string) => {
-    if (!digest) return
-    const key = `${interest}|${digest.week_start}`
+    if (!latestDigest) return
+    const key = `${interest}|${latestDigest.week_start}`
     attemptedRef.current.delete(key)
     setFailedKeys((prev) => {
       const next = new Set(prev)
@@ -267,6 +311,8 @@ export default function HomePage() {
       return next
     })
   }
+
+  const viewingLatest = !digest || !latestDigest || digest.week_start === latestDigest.week_start
 
   const orderedArticles = useMemo(() => {
     const byId = new Map(articles.map((a) => [a.id, a]))
@@ -328,13 +374,14 @@ export default function HomePage() {
     ? (activeWeek && activeEntry.digests.find((d) => d.week_start === activeWeek)) || activeEntry.digests[0] || null
     : null
   const shownWeek = shownInterestDigest?.week_start ?? null
-  const isCurrentWeekShown = Boolean(digest && shownWeek === digest.week_start)
+  // 兴趣速览和下方正在看的是同一期：[短语](编号) 可以页内跳到卡片；否则单独取那一期清单，链接指向原文
+  const interestOnViewedWeek = Boolean(digest && shownWeek === digest.week_start)
   const activeGenerating = Boolean(activeInterest && generatingSet.has(activeInterest))
   const activeMissingThisWeek = Boolean(
-    digest && activeInterest && !activeEntry?.digests.some((d) => d.week_start === digest.week_start)
+    latestDigest && activeInterest && !activeEntry?.digests.some((d) => d.week_start === latestDigest.week_start)
   )
   const activeFailedThisWeek = Boolean(
-    digest && activeInterest && activeMissingThisWeek && failedKeys.has(`${activeInterest}|${digest.week_start}`)
+    latestDigest && activeInterest && activeMissingThisWeek && failedKeys.has(`${activeInterest}|${latestDigest.week_start}`)
   )
 
   const interestParagraphs = useMemo(() => toParagraphs(
@@ -345,7 +392,13 @@ export default function HomePage() {
 
   // 往期速览的 [短语](编号) 对应的是那一周的论文清单，单独取来，链接指向原文
   useEffect(() => {
-    if (!supabase || !shownWeek || isCurrentWeekShown || archiveArticles?.week === shownWeek) return
+    if (!supabase || !shownWeek || interestOnViewedWeek || archiveArticles?.week === shownWeek) return
+    const cached = digestCacheRef.current.get(shownWeek)
+    if (cached) {
+      const byId = new Map(cached.articles.map((a) => [a.id, a]))
+      setArchiveArticles({ week: shownWeek, list: cached.digest.article_ids.map((id) => byId.get(id)) })
+      return
+    }
     let cancelled = false
     const loadArchive = async () => {
       const { data, error } = await supabase
@@ -365,16 +418,16 @@ export default function HomePage() {
     }
     void loadArchive()
     return () => { cancelled = true }
-  }, [shownWeek, isCurrentWeekShown, archiveArticles?.week])
+  }, [shownWeek, interestOnViewedWeek, archiveArticles?.week])
 
   const noCards = useMemo(() => new Set<string>(), [])
-  const interestArticles = isCurrentWeekShown
+  const interestArticles = interestOnViewedWeek
     ? orderedArticles
     : (archiveArticles?.week === shownWeek ? archiveArticles.list : [])
 
   const weekLabel = (weekStart: string) => {
     const period = formatPeriod(weekStart, weekEndOf(weekStart), displayLanguage)
-    return digest && weekStart === digest.week_start ? `${text.digestInterestThisWeek} · ${period}` : period
+    return latestDigest && weekStart === latestDigest.week_start ? `${text.digestInterestThisWeek} · ${period}` : period
   }
 
   const articleTitle = (a: Article | undefined) => {
@@ -485,14 +538,43 @@ export default function HomePage() {
         ) : (
           <>
             {/* Hero */}
-            <span className="inline-flex items-center rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white">
-              {text.digestTitle}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                  viewingLatest ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+                }`}
+              >
+                {viewingLatest ? text.digestTitle : text.digestPastTitle}
+              </span>
+              {digestWeeks.length > 1 && (
+                <select
+                  value={pendingWeek ?? digest.week_start}
+                  onChange={(e) => void selectDigestWeek(e.target.value)}
+                  aria-label={text.digestWeekSelect}
+                  className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                >
+                  {digestWeeks.map((week) => (
+                    <option key={week} value={week}>{weekLabel(week)}</option>
+                  ))}
+                </select>
+              )}
+              {!viewingLatest && latestDigest && (
+                <button
+                  type="button"
+                  onClick={() => void selectDigestWeek(latestDigest.week_start)}
+                  className="h-8 rounded-lg px-2 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 hover:text-blue-900"
+                >
+                  {text.digestBackToLatest}
+                </button>
+              )}
+              {switchingWeek && <span className="text-xs text-gray-400">{text.loading}</span>}
+            </div>
+            {weekLoadFailed && <p className="mt-2 text-sm text-red-600">{text.digestWeekLoadFailed}</p>}
             <h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
               {formatPeriod(digest.week_start, digest.week_end, displayLanguage)}
             </h2>
             <p className="mt-2 text-sm text-gray-500">
-              {text.digestCount(digest.article_count || orderedArticles.length)}
+              {(viewingLatest ? text.digestCount : text.digestCountPast)(digest.article_count || orderedArticles.length)}
               <span className="mx-1.5 text-gray-300">·</span>
               {displayLanguage === 'zh' ? 'AI 自动生成' : 'AI-generated'}
             </p>
@@ -632,7 +714,7 @@ export default function HomePage() {
                         {renderOverviewLinks(
                           paragraph,
                           interestArticles,
-                          isCurrentWeekShown ? cardIds : noCards,
+                          interestOnViewedWeek ? cardIds : noCards,
                           jumpToPaper
                         )}
                       </p>
@@ -640,128 +722,131 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {shownInterestDigest && !isCurrentWeekShown && (
+                {shownInterestDigest && !interestOnViewedWeek && (
                   <p className="mt-4 text-xs text-gray-400">{text.digestInterestArchiveNote}</p>
                 )}
               </section>
             )}
 
-            {/* 综合概览 */}
-            <section className="mt-10">
-              <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-                {text.digestOverviewTitle}
-              </h3>
-              <div className="mt-4 space-y-4">
-                {overviewParagraphs.map((paragraph, i) => (
-                  <p key={i} className="text-[16px] leading-8 text-gray-800">
-                    {renderOverviewLinks(paragraph, orderedArticles, cardIds, jumpToPaper)}
-                  </p>
-                ))}
-              </div>
-              <p className="mt-5 text-xs text-gray-400">{text.digestDisclaimer}</p>
-            </section>
-
-            {/* 分隔 */}
-            <hr className="my-10 border-gray-200" />
-
-            {/* 本期内容 */}
-            <section>
-              <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
-                {text.digestHighlightsTitle}
-                <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                  {digest.article_count || highlights.length}
-                </span>
-              </h3>
-
-              {highlights.length === 0 ? (
-                <p className="mt-4 rounded-xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-400">
-                  {text.digestEmpty}
-                </p>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {highlights.map((h) => {
-                    const title = articleTitle(h.article)
-                    const date = articleDate(h.article)
-                    const result = displayLanguage === 'zh' ? h.result_zh : (h.result_en || h.result_zh)
-                    const core = displayLanguage === 'zh' ? h.core_zh : (h.core_en || h.core_zh)
-                    const saved = bookmarks.has(h.article_id)
-                    return (
-                      <article
-                        key={h.article_id}
-                        id={paperAnchorId(h.article_id)}
-                        tabIndex={-1}
-                        className={`scroll-mt-24 rounded-xl border p-5 transition-all duration-500 focus:outline-none ${
-                          flashId === h.article_id
-                            ? 'border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200'
-                            : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          {h.article?.source_url ? (
-                            <a
-                              href={h.article.source_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[15px] font-semibold leading-snug text-blue-700 underline decoration-blue-300/70 underline-offset-[3px] transition-colors hover:text-blue-900 hover:decoration-blue-500"
-                            >
-                              {title}
-                            </a>
-                          ) : (
-                            <span className="text-[15px] font-semibold leading-snug text-gray-900">{title}</span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => toggleBookmark(h.article_id)}
-                            aria-pressed={saved}
-                            aria-label={saved ? text.removeBookmark : text.addBookmark}
-                            title={saved ? text.removeBookmark : text.addBookmark}
-                            className={`-mr-1 -mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                              saved
-                                ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600'
-                                : 'text-gray-300 hover:bg-gray-50 hover:text-gray-500'
-                            }`}
-                          >
-                            <svg
-                              aria-hidden="true"
-                              width="16"
-                              height="16"
-                              viewBox="0 0 24 24"
-                              fill={saved ? 'currentColor' : 'none'}
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                            </svg>
-                          </button>
-                        </div>
-                        <p className="mt-1 text-xs text-gray-400">
-                          {h.article?.source_name}
-                          {date ? ` · ${date}` : ''}
-                        </p>
-                        <div className="mt-3 space-y-2">
-                          {result && (
-                            <p className="text-sm leading-relaxed text-gray-700">
-                              <span className="mr-1.5 inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
-                                {text.digestResult}
-                              </span>
-                              {result}
-                            </p>
-                          )}
-                          {core && (
-                            <p className="text-sm leading-relaxed text-gray-700">
-                              <span className="mr-1.5 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-                                {text.digestCore}
-                              </span>
-                              {core}
-                            </p>
-                          )}
-                        </div>
-                      </article>
-                    )
-                  })}
+            {/* 正在看的这一期：切换期数时先淡出旧内容 */}
+            <div aria-busy={switchingWeek} className={`transition-opacity ${switchingWeek ? 'opacity-50' : ''}`}>
+              {/* 综合概览 */}
+              <section className="mt-10">
+                <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                  {viewingLatest ? text.digestOverviewTitle : text.digestOverviewTitlePast}
+                </h3>
+                <div className="mt-4 space-y-4">
+                  {overviewParagraphs.map((paragraph, i) => (
+                    <p key={i} className="text-[16px] leading-8 text-gray-800">
+                      {renderOverviewLinks(paragraph, orderedArticles, cardIds, jumpToPaper)}
+                    </p>
+                  ))}
                 </div>
-              )}
-            </section>
+                <p className="mt-5 text-xs text-gray-400">{text.digestDisclaimer}</p>
+              </section>
+
+              {/* 分隔 */}
+              <hr className="my-10 border-gray-200" />
+
+              {/* 本期内容 */}
+              <section>
+                <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                  {viewingLatest ? text.digestHighlightsTitle : text.digestHighlightsTitlePast}
+                  <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                    {digest.article_count || highlights.length}
+                  </span>
+                </h3>
+
+                {highlights.length === 0 ? (
+                  <p className="mt-4 rounded-xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-400">
+                    {text.digestEmpty}
+                  </p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {highlights.map((h) => {
+                      const title = articleTitle(h.article)
+                      const date = articleDate(h.article)
+                      const result = displayLanguage === 'zh' ? h.result_zh : (h.result_en || h.result_zh)
+                      const core = displayLanguage === 'zh' ? h.core_zh : (h.core_en || h.core_zh)
+                      const saved = bookmarks.has(h.article_id)
+                      return (
+                        <article
+                          key={h.article_id}
+                          id={paperAnchorId(h.article_id)}
+                          tabIndex={-1}
+                          className={`scroll-mt-24 rounded-xl border p-5 transition-all duration-500 focus:outline-none ${
+                            flashId === h.article_id
+                              ? 'border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200'
+                              : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            {h.article?.source_url ? (
+                              <a
+                                href={h.article.source_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[15px] font-semibold leading-snug text-blue-700 underline decoration-blue-300/70 underline-offset-[3px] transition-colors hover:text-blue-900 hover:decoration-blue-500"
+                              >
+                                {title}
+                              </a>
+                            ) : (
+                              <span className="text-[15px] font-semibold leading-snug text-gray-900">{title}</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => toggleBookmark(h.article_id)}
+                              aria-pressed={saved}
+                              aria-label={saved ? text.removeBookmark : text.addBookmark}
+                              title={saved ? text.removeBookmark : text.addBookmark}
+                              className={`-mr-1 -mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                saved
+                                  ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600'
+                                  : 'text-gray-300 hover:bg-gray-50 hover:text-gray-500'
+                              }`}
+                            >
+                              <svg
+                                aria-hidden="true"
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill={saved ? 'currentColor' : 'none'}
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                              </svg>
+                            </button>
+                          </div>
+                          <p className="mt-1 text-xs text-gray-400">
+                            {h.article?.source_name}
+                            {date ? ` · ${date}` : ''}
+                          </p>
+                          <div className="mt-3 space-y-2">
+                            {result && (
+                              <p className="text-sm leading-relaxed text-gray-700">
+                                <span className="mr-1.5 inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                                  {text.digestResult}
+                                </span>
+                                {result}
+                              </p>
+                            )}
+                            {core && (
+                              <p className="text-sm leading-relaxed text-gray-700">
+                                <span className="mr-1.5 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                                  {text.digestCore}
+                                </span>
+                                {core}
+                              </p>
+                            )}
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            </div>
           </>
         )}
       </main>
