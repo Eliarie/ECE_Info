@@ -24,7 +24,7 @@
 - 兴趣概览的提示词在脚本和 `web/src/app/api/generate/route.ts` 各有一份，**改一边要同步另一边**（2026-10-21 核对过一致）。
 - 用户（2026-10-21）：兴趣存档不必每周都有，能看到最近两三周就够。所以第 3、4、6、7 步是「锦上添花」，不急。
 
-## 需要用户手动做的（必做的都已完成；只剩可选的第 3 步）
+## 需要用户手动做的（必做的都已完成；可选的每周自动补兴趣卡在 Supabase 接口刷新）
 
 详细说明见 `RUN_THIS_SQL.md` 的 ①、①-2、①-3。
 
@@ -32,23 +32,28 @@
 2. [x] ①-2（`20261019090000_add_user_interest_digests.sql`）：用户 2026-10-21 已执行。同日在本地预览做了端到端测试，全部通过：
    添加兴趣 → 生成并写入数据库（`save_interest_digest` 204，库里可查到）→ 清空浏览器后用 `?bookmark_sync=<同步码>` 打开，
    兴趣和概览从库里读回、不重新生成 → 页面上「删除」后库里清空。测试数据已删除。
-3. [ ] **①-3**（`20261019120000_add_interest_digest_job_rpcs.sql`）：可选，让每周任务自动补兴趣速览。**只差这一步要用户在 Supabase 后台执行**：
-   Claude 连不进数据库后台（项目里只有公开密钥），Claude in Chrome 没连上，内置浏览器打不开 supabase.com（资源全被拦，疑似系统代理没开）
+3. [~] ①-3（`20261019120000_add_interest_digest_job_rpcs.sql`）：用户 2026-10-21 已执行，**函数已在库里**（用户在 SQL Editor 查到
+   `list_interest_digest_targets`、`save_interest_digest_for_devices`），**但 Supabase 接口（PostgREST）一直调不到**（PGRST202），
+   到 2026-10-22 仍是如此。同样权限写法的旧函数 `prune_unbookmarked_articles` 调用正常，说明不是权限问题，而是接口的函数清单
+   在 ①-3 之后再没刷新成功（`notify pgrst, 'reload schema'` 发过多次无效）。下一步二选一：
+   - 看 Supabase → Logs → PostgREST 里有没有 `schema cache` 报错，按报错处理；
+   - 或在 Project Settings → General 重启项目（会停几分钟；若刷新本身报错，重启后接口可能起不来，所以最好先看日志）。
 4. [x] GitHub Secret `INTEREST_DIGEST_JOB_TOKEN`：2026-10-21 已设置
 5. [x] 推送 main 到 GitHub（2026-10-21，`75b3f6b`）
-6. [ ] 可选，第 3 步做完后 Claude 来跑：Actions →「每周研究速览」→ Run workflow，勾选 `dry_run` + `interests_only` 演练；
-   日志出现「订阅中的兴趣 N 个：待生成 …」即成功
-7. [ ] 可选，第 3 步做完后 Claude 来跑：只勾 `interests_only` 再跑一次，给最新一期补齐兴趣速览
+6. [~] 演练：2026-10-22 已跑（run 39725486049）。参数、Secret、找最新一期都正常，到读取订阅时被上面的 PGRST202 挡住，
+   按设计只打警告、不让任务失败，日志未泄露兴趣原文。接口能调到函数后再跑一次，出现「订阅中的兴趣 N 个：待生成 …」即成功
+7. [ ] 接口能调到函数后 Claude 来跑：只勾 `interests_only` 再跑一次，给最新一期补齐兴趣速览
 
 ## 未验证 / 已知情况
 
-- 每周任务的新代码只做过编译检查，**没有对真实数据库跑过**。本机演练没跑成：系统 Python 没装 `openai`，`.venv` 是空目录。
+- 每周任务的新代码在 GitHub 上演练过（见第 6 步），但还没真正生成、写入过兴趣速览。本机跑不了：系统 Python 没装 `openai`，`.venv` 是空目录。
 - 本机 shell 设了代理 `127.0.0.1:7897`，代理没开时 `git push`、curl 都连不上；2026-10-21 推送时临时绕过了代理。
 - 本地预览要生成兴趣速览，需要 `web/.env.local` 里有 `DEEPSEEK_API_KEY`（2026-10-21 已从根目录 `.env` 复制过去，该文件不进 git）。
 - 根目录的 `IDEA.md`（未跟踪）把 ECE 写成「电子与计算机工程」论文平台，和本项目（学前教育）不符，疑似放错位置，待确认是否删除。
 
 ## 最近完成
 
+- 每周任务在 GitHub 上演练，跑到读取订阅前都正常（2026-10-22）
 - 兴趣存档端到端测试通过、设置 GitHub Secret（2026-10-21）
 - `221a108` 期数标签「本周」改为「最新一期」
 - `4b522f8` 主速览可切换往期
