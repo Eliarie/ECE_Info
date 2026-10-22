@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
 import Pagination from '@/components/Pagination'
+import SyncDeviceDialog from '@/components/SyncDeviceDialog'
 import { getTopicLabel, TOPICS, UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
 import type { Article, DisplayLanguage, Module, Region } from '@/lib/types'
@@ -103,7 +104,7 @@ export default function HomePage() {
   const text = UI_TEXT[displayLanguage]
   const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
   const resultsTopRef = useRef<HTMLDivElement | null>(null)
-  const { bookmarks, toggleBookmark, shareBookmarkSync } = useBookmarks(supabase)
+  const { bookmarks, toggleBookmark, getSyncLink } = useBookmarks(supabase)
 
   useEffect(() => {
     const savedLanguage = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
@@ -231,8 +232,8 @@ export default function HomePage() {
     }
   }, [sourceDropdownOpen])
 
-  const openBookmarkSync = async () => {
-    setSyncLink(await shareBookmarkSync())
+  const openBookmarkSync = () => {
+    setSyncLink(getSyncLink())
   }
 
   const changeDisplayLanguage = (language: DisplayLanguage) => {
@@ -434,7 +435,7 @@ export default function HomePage() {
 
             <button
               type="button"
-              onClick={() => { void openBookmarkSync() }}
+              onClick={openBookmarkSync}
               aria-label={text.syncFavorites}
               title={text.syncFavorites}
               className="flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3"
@@ -476,22 +477,7 @@ export default function HomePage() {
       </nav>
 
       {syncLink && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4" role="dialog" aria-modal="true" aria-labelledby="sync-link-title">
-          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
-            <div className="mb-3 flex items-start justify-between gap-4">
-              <div>
-                <h2 id="sync-link-title" className="text-base font-semibold text-gray-900">{text.syncFavorites}</h2>
-                <p className="mt-1 text-sm text-gray-600">{text.syncLinkCopied}</p>
-              </div>
-              <button type="button" onClick={() => setSyncLink(null)} aria-label="关闭" className="rounded p-1 text-xl leading-none text-gray-400 hover:bg-gray-100 hover:text-gray-700">×</button>
-            </div>
-            <input readOnly value={syncLink} onFocus={(event) => event.currentTarget.select()} className="w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-sm text-gray-700" aria-label={text.copySyncLink} />
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" onClick={() => setSyncLink(null)} className="rounded-md border border-gray-200 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50">关闭</button>
-              <button type="button" onClick={() => { void navigator.clipboard?.writeText(syncLink) }} className="rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700">复制链接</button>
-            </div>
-          </div>
-        </div>
+        <SyncDeviceDialog link={syncLink} language={displayLanguage} onClose={() => setSyncLink(null)} />
       )}
 
       <div className="mx-auto max-w-7xl px-4 py-4 sm:py-5 lg:py-6">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
+import SyncDeviceDialog from '@/components/SyncDeviceDialog'
 import { UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
 import { MAX_INTERESTS, normalizeInterest, useInterestDigests } from '@/lib/useInterestDigests'
@@ -128,7 +129,8 @@ export default function HomePage() {
   const weekRequestRef = useRef(0)
   const [loading, setLoading] = useState(true)
   const text = UI_TEXT[displayLanguage]
-  const { bookmarks, toggleBookmark } = useBookmarks(supabase)
+  const { bookmarks, toggleBookmark, getSyncLink } = useBookmarks(supabase)
+  const [syncLink, setSyncLink] = useState<string | null>(null)
 
   const { entries: interestEntries, loaded: interestsLoaded, saveDigest, removeInterest } = useInterestDigests(supabase)
   const [interestInput, setInterestInput] = useState('')
@@ -480,6 +482,21 @@ export default function HomePage() {
               )}
             </Link>
 
+            <button
+              type="button"
+              onClick={() => setSyncLink(getSyncLink())}
+              aria-label={text.syncFavorites}
+              title={text.syncFavorites}
+              className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 sm:px-3"
+            >
+              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="2" y="4" width="13" height="10" rx="1.5" />
+                <path d="M6 18h5" />
+                <rect x="16" y="8" width="6" height="12" rx="1.5" />
+              </svg>
+              <span className="hidden sm:inline">{text.syncFavorites}</span>
+            </button>
+
             <Link
               href="/browse"
               className="flex h-9 items-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900"
@@ -516,6 +533,10 @@ export default function HomePage() {
           </div>
         </div>
       </nav>
+
+      {syncLink && (
+        <SyncDeviceDialog link={syncLink} language={displayLanguage} onClose={() => setSyncLink(null)} />
+      )}
 
       <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
         {loading ? (

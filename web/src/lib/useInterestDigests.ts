@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getBookmarkDeviceId } from '@/lib/useBookmarks'
+import { getBookmarkDeviceId, getSyncedDeviceId, INTEREST_SYNCED_DEVICE_KEY, markSyncedDevice } from '@/lib/useBookmarks'
 
 const STORAGE_KEY = 'digest_interests'
 // 旧版只存一个兴趣：兴趣词 + 当周概览缓存
@@ -148,6 +148,11 @@ export function useInterestDigests(client: SupabaseClient | null) {
 
     let cancelled = false
     const synchronize = async () => {
+      const syncedDevice = getSyncedDeviceId(INTEREST_SYNCED_DEVICE_KEY)
+      if (syncedDevice && syncedDevice !== deviceId) {
+        // 刚扫码加入别的设备：本机的兴趣都属于旧同步码，当成未同步，并进新的同步组
+        apply((prev) => prev.map((e) => ({ ...e, synced: false, unsyncedWeeks: e.digests.map((d) => d.week_start) })))
+      }
       const { data, error } = await client.rpc('get_user_interests', { p_device_id: deviceId })
       if (cancelled) return
       if (error) {
@@ -156,6 +161,7 @@ export function useInterestDigests(client: SupabaseClient | null) {
         return
       }
       apply((prev) => mergeWithRemote(prev, (data ?? []) as RemoteEntry[]))
+      markSyncedDevice(INTEREST_SYNCED_DEVICE_KEY, deviceId)
       setLoaded(true)
       for (const e of entriesRef.current) {
         for (const week of e.unsyncedWeeks) {
