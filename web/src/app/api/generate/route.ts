@@ -15,6 +15,13 @@ type DigestArticle = {
   region: string
 }
 
+// reason 只含错误类别（不含密钥或兴趣原文），返回给前端便于排查线上失败
+class GenerateError extends Error {
+  constructor(public reason: string, message: string) {
+    super(message)
+  }
+}
+
 async function generateInterestOverview(
   articles: (DigestArticle | undefined)[],
   interest: string
@@ -49,7 +56,7 @@ async function generateInterestOverview(
 ${listing}`
 
   const apiKey = process.env.DEEPSEEK_API_KEY
-  if (!apiKey) throw new Error('缺少 DEEPSEEK_API_KEY')
+  if (!apiKey) throw new GenerateError('missing_key', '缺少 DEEPSEEK_API_KEY')
 
   const resp = await fetch('https://api.deepseek.com/chat/completions', {
     method: 'POST',
@@ -66,7 +73,10 @@ ${listing}`
     }),
   })
 
-  if (!resp.ok) throw new Error(`DeepSeek 返回 ${resp.status}`)
+  if (!resp.ok) {
+    const detail = (await resp.text().catch(() => '')).slice(0, 300)
+    throw new GenerateError(`deepseek_${resp.status}`, `DeepSeek 返回 ${resp.status}: ${detail}`)
+  }
 
   const data = await resp.json()
   const raw = data?.choices?.[0]?.message?.content ?? ''
@@ -131,6 +141,7 @@ export async function POST(request: Request) {
     })
   } catch (error) {
     console.error('api/generate error:', error)
-    return NextResponse.json({ error: '生成失败' }, { status: 500 })
+    const reason = error instanceof GenerateError ? error.reason : 'unknown'
+    return NextResponse.json({ error: '生成失败', reason }, { status: 500 })
   }
 }
