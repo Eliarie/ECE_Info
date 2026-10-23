@@ -1,6 +1,19 @@
 # 交接进度
 
-更新于 2026-10-22。所有功能已上线并验证；没有待用户处理的步骤。
+更新于 2026-10-23。**有 1 个待用户处理的步骤**（见下）。
+
+## 进行中：兴趣速览在线上生成失败（2026-10-23）
+
+用户手机上添加兴趣「ai 和学前教育」点「生成」，提示「生成失败，请稍后重试」。
+- 原因：Vercel 主站没配 `DEEPSEEK_API_KEY`。`/api/generate/` 现在会返回 `reason`，线上实测返回 `missing_key`。
+  本地预览（`web/.env.local` 有 key）同样请求 200、约 7 秒出结果；DeepSeek 余额 12.96 元，key 本身可用。
+  之前的「端到端验证」都是在本地预览做的，线上从来没成功生成过。
+- GitHub Pages 备用站（eliarie.github.io/ECE_Info）是静态站，本来就没有生成接口。现在在那里点「生成」会提示去主站生成，
+  并且不再自动尝试补生成（已用本地静态构建验证）。
+- [ ] **用户**：Vercel → ece-info 项目 → Settings → Environment Variables 添加 `DEEPSEEK_API_KEY`（值同根目录 `.env`），
+  勾选 Production，然后 Deployments 里对最新一次点 Redeploy（环境变量要重新部署才生效）。
+- [ ] 之后用 `curl -X POST -H 'Content-Type: application/json' -d '{"interest":"游戏"}' https://ece-info.vercel.app/api/generate/` 确认返回 overview_zh。
+- 如果用户平时在大陆不翻墙用的是备用站，要让备用站也能生成，需要另做一个大陆能访问的接口（如 Supabase Edge Function），还没做。
 
 ## 刚完成：多设备同步改成扫码，并修好「删掉的收藏会回来」（2026-10-22）
 

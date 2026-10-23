@@ -14,6 +14,8 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey)
 const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAnonKey as string) : null
+// GitHub Pages 备用站是静态导出，没有 /api/generate，不能生成兴趣速览
+const isStaticSite = Boolean(process.env.NEXT_PUBLIC_BASE_PATH)
 
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 const ACTIVE_INTEREST_KEY = 'digest_active_interest'
@@ -137,7 +139,7 @@ export default function HomePage() {
   const [activeInterest, setActiveInterest] = useState<string | null>(null)
   const [activeWeek, setActiveWeek] = useState<string | null>(null) // null = 该兴趣最新一期
   const [generatingSet, setGeneratingSet] = useState<Set<string>>(new Set())
-  const [interestError, setInterestError] = useState<'failed' | 'limit' | null>(null)
+  const [interestError, setInterestError] = useState<'failed' | 'limit' | 'static' | null>(null)
   const attemptedRef = useRef<Set<string>>(new Set()) // 本次打开页面已尝试生成过的「兴趣|周」
   const [failedKeys, setFailedKeys] = useState<Set<string>>(new Set())
   const [archiveArticles, setArchiveArticles] = useState<{ week: string; list: (LinkableArticle | undefined)[] } | null>(null)
@@ -257,6 +259,10 @@ export default function HomePage() {
   const submitInterest = async () => {
     const value = normalizeInterest(interestInput)
     if (!value || !latestDigest) return
+    if (isStaticSite) {
+      setInterestError('static')
+      return
+    }
     const exists = interestEntries.some((e) => e.interest === value)
     if (!exists && interestEntries.length >= MAX_INTERESTS) {
       setInterestError('limit')
@@ -289,7 +295,7 @@ export default function HomePage() {
 
   // 每个已订阅的兴趣缺本周速览时自动补生成：先补正在看的，其余逐个在后台补
   useEffect(() => {
-    if (!latestDigest || !interestsLoaded || generatingSet.size > 0) return
+    if (isStaticSite || !latestDigest || !interestsLoaded || generatingSet.size > 0) return
     const week = latestDigest.week_start
     const stale = interestEntries.filter(
       (e) => !e.digests.some((d) => d.week_start === week) && !attemptedRef.current.has(`${e.interest}|${week}`)
@@ -643,7 +649,11 @@ export default function HomePage() {
 
             {interestError && (
               <p className="mt-3 text-sm text-red-600">
-                {interestError === 'limit' ? text.digestInterestLimit(MAX_INTERESTS) : text.digestInterestError}
+                {interestError === 'limit'
+                  ? text.digestInterestLimit(MAX_INTERESTS)
+                  : interestError === 'static'
+                    ? text.digestInterestStaticSite
+                    : text.digestInterestError}
               </p>
             )}
 
