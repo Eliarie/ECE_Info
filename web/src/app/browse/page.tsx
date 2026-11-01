@@ -84,10 +84,45 @@ const buildCoreJournalSetByRegion = (): Record<Region, Set<string>> => {
 // 核心期刊优先排序：名单由配置文件驱动（按国内/国际分开）
 const CORE_JOURNAL_NAMES_BY_REGION = buildCoreJournalSetByRegion()
 
+// 列表先载入最新的这么多篇；一个栏目超过这个数时，按来源/主题/搜索筛选改为直接查库
+const INITIAL_LOAD = 500
+const SCOPED_LOAD = 1000
+
+// 国内政策：中央文件整体在前，中央与地方各自按正式发布时间由新到旧。
+// 其他场景：发布时间降序 -> 核心期刊优先 -> 引用数降序。
+const sortArticles = (data: Article[], module: Module, region: Region) =>
+  [...data].sort((a, b) => {
+    if (module === 'policy' && region === 'domestic') {
+      const aCentral = isCentralSource(a.source_name)
+      const bCentral = isCentralSource(b.source_name)
+      if (aCentral !== bCentral) return aCentral ? -1 : 1
+    }
+
+    const ta = a.published_at ? new Date(a.published_at).getTime() : 0
+    const tb = b.published_at ? new Date(b.published_at).getTime() : 0
+    if (tb !== ta) return tb - ta
+
+    const coreSet = CORE_JOURNAL_NAMES_BY_REGION[region]
+    const aCore = coreSet.has(a.source_name)
+    const bCore = coreSet.has(b.source_name)
+    if (aCore !== bCore) return aCore ? -1 : 1
+
+    return (b.cited_by_count ?? 0) - (a.cited_by_count ?? 0)
+  })
+
+// PostgREST 的 or=() 语法里逗号、括号等有特殊含义，搜索词里去掉
+const sanitizeSearch = (value: string) => value.replace(/[,()*%\\"'.:]/g, ' ').replace(/\s+/g, ' ').trim()
+
+type ArticleMeta = Pick<Article, 'source_name' | 'topic_tags'>
+
 export default function HomePage() {
   const [module, setModule] = useState<Module>('research_frontier')
   const [region, setRegion] = useState<Region>('international')
   const [articles, setArticles] = useState<Article[]>([])
+  // 整个栏目每篇的来源和主题（很小），用来算准确的数量；null = 还没取到，先按已载入的算
+  const [articleMeta, setArticleMeta] = useState<ArticleMeta[] | null>(null)
+  const [scoped, setScoped] = useState<{ key: string; list: Article[] } | null>(null)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
   const [configuredSources, setConfiguredSources] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -137,7 +172,7 @@ export default function HomePage() {
       .eq('module', module)
       .eq('region', region)
       .order('published_at', { ascending: false, nullsFirst: false })
-      .limit(500)
+      .limit(INITIAL_LOAD)
 
     const sourcesRequest = supabase
       .from('sources')
@@ -162,32 +197,86 @@ export default function HomePage() {
       } else {
         setConfiguredSources((sourceResult.data ?? []).map((source) => source.name).filter(Boolean))
       }
-      // 国内政策：中央文件整体在前，中央与地方各自按正式发布时间由新到旧。
-      // 其他场景：发布时间降序 -> 核心期刊优先 -> 引用数降序。
-      const sorted = (data ?? []).sort((a, b) => {
-        if (module === 'policy' && region === 'domestic') {
-          const aCentral = isCentralSource(a.source_name)
-          const bCentral = isCentralSource(b.source_name)
-          if (aCentral !== bCentral) return aCentral ? -1 : 1
-        }
-
-        const ta = a.published_at ? new Date(a.published_at).getTime() : 0
-        const tb = b.published_at ? new Date(b.published_at).getTime() : 0
-        if (tb !== ta) return tb - ta
-
-        const coreSet = CORE_JOURNAL_NAMES_BY_REGION[region]
-        const aCore = coreSet.has(a.source_name)
-        const bCore = coreSet.has(b.source_name)
-        if (aCore !== bCore) return aCore ? -1 : 1
-
-        const ca = (a as any).cited_by_count ?? 0
-        const cb = (b as any).cited_by_count ?? 0
-        return cb - ca
-      })
+      const sorted = sortArticles((data ?? []) as Article[], module, region)
       setArticles(sorted)
       setLoading(false)
     })
   }, [module, region])
+
+  useEffect(() => {
+    setArticleMeta(null)
+    setScoped(null)
+    if (!supabase) return
+    const client = supabase
+    let cancelled = false
+    void (async () => {
+      const rows: ArticleMeta[] = []
+      for (let from = 0; ; from += 1000) {
+        const { data, error } = await client
+          .from('articles')
+          .select('source_name,topic_tags')
+          .eq('module', module)
+          .eq('region', region)
+          .order('id')
+          .range(from, from + 999)
+        if (cancelled) return
+        if (error) {
+          console.error('Supabase article meta query error:', error)
+          return
+        }
+        rows.push(...((data ?? []) as ArticleMeta[]))
+        if (!data || data.length < 1000) break
+      }
+      setArticleMeta(rows)
+    })()
+    return () => { cancelled = true }
+  }, [module, region])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search.trim()), 400)
+    return () => window.clearTimeout(timer)
+  }, [search])
+
+  // 栏目没有全部载入时，按来源/主题/搜索筛选直接查库，否则早一点的文章会被漏掉
+  const partiallyLoaded = articles.length >= INITIAL_LOAD && (articleMeta === null || articleMeta.length > articles.length)
+  const scopeKey = partiallyLoaded && !showFavorites && (sourceFilter || activeTopic || sanitizeSearch(debouncedSearch))
+    ? JSON.stringify([module, region, sourceFilter, activeTopic, sanitizeSearch(debouncedSearch)])
+    : null
+
+  useEffect(() => {
+    if (!supabase || !scopeKey) return
+    if (scoped?.key === scopeKey) return
+    const client = supabase
+    let cancelled = false
+    void (async () => {
+      let query = client.from('articles').select('*').eq('module', module).eq('region', region)
+      if (sourceFilter === CENTRAL_SCOPE || sourceFilter.startsWith(PROVINCE_SCOPE_PREFIX)) {
+        const province = sourceFilter.slice(PROVINCE_SCOPE_PREFIX.length)
+        const names = Array.from(new Set((articleMeta ?? articles).map((a) => a.source_name))).filter((name) =>
+          sourceFilter === CENTRAL_SCOPE ? isCentralSource(name) : getSourceProvince(name) === province
+        )
+        query = query.in('source_name', names.length ? names : [''])
+      } else if (sourceFilter) {
+        query = query.eq('source_name', sourceFilter)
+      }
+      // topic_tags 是 jsonb，包含查询要传 JSON 文本
+      if (activeTopic) query = query.contains('topic_tags', JSON.stringify([activeTopic]))
+      const q = sanitizeSearch(debouncedSearch)
+      if (q) {
+        query = query.or(
+          ['title_zh', 'title_original', 'abstract_zh', 'abstract_original'].map((f) => `${f}.ilike.*${q}*`).join(',')
+        )
+      }
+      const { data, error } = await query
+        .order('published_at', { ascending: false, nullsFirst: false })
+        .limit(SCOPED_LOAD)
+      if (cancelled) return
+      if (error) console.error('Supabase scoped query error:', error)
+      setScoped({ key: scopeKey, list: sortArticles((data ?? []) as Article[], module, region) })
+    })()
+    return () => { cancelled = true }
+  }, [scopeKey]) // 其余条件都已编进 scopeKey
+  const scopedLoading = Boolean(scopeKey && scoped?.key !== scopeKey)
 
   useEffect(() => {
     if (!showFavorites) return
@@ -242,20 +331,23 @@ export default function HomePage() {
   }
 
   // 侧边栏：统计每个主题在当前列表中的文章数
+  const countSource: ArticleMeta[] = articleMeta ?? articles
+  const totalCount = countSource.length
+
   const topicCounts = useMemo(() => {
     const map = new Map<string, number>()
-    for (const a of articles) {
+    for (const a of countSource) {
       for (const tag of (a.topic_tags ?? [])) {
         map.set(tag, (map.get(tag) ?? 0) + 1)
       }
     }
     return map
-  }, [articles])
+  }, [countSource])
 
   const sources = useMemo(() => {
     const set = new Set([
       ...configuredSources,
-      ...articles.map((a) => a.source_name).filter(Boolean),
+      ...countSource.map((a) => a.source_name).filter(Boolean),
     ])
     const alphabetical = Array.from(set).sort((a, b) => a.localeCompare(b, 'zh-CN'))
     if (module !== 'policy' || region !== 'domestic') return alphabetical
@@ -265,29 +357,29 @@ export default function HomePage() {
     const ministry = central.filter((source) => source === '教育部')
     const otherCentral = central.filter((source) => source !== '教育部')
     return [...ministry, ...otherCentral]
-  }, [articles, configuredSources, module, region])
+  }, [countSource, configuredSources, module, region])
 
   const sourceCounts = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const article of articles) {
+    for (const article of countSource) {
       counts.set(article.source_name, (counts.get(article.source_name) ?? 0) + 1)
     }
     return counts
-  }, [articles])
+  }, [countSource])
 
   const centralCount = useMemo(
-    () => articles.filter((article) => isCentralSource(article.source_name)).length,
-    [articles]
+    () => countSource.filter((article) => isCentralSource(article.source_name)).length,
+    [countSource]
   )
 
   const provinceCounts = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const article of articles) {
+    for (const article of countSource) {
       const province = getSourceProvince(article.source_name)
       if (province) counts.set(province, (counts.get(province) ?? 0) + 1)
     }
     return counts
-  }, [articles])
+  }, [countSource])
 
   const sourceFilterLabel = useMemo(() => {
     if (!sourceFilter) return text.allSources
@@ -301,8 +393,9 @@ export default function HomePage() {
 
   const baseList = useMemo(() => {
     if (showFavorites) return favoriteArticles.filter((a) => bookmarks.has(a.id))
+    if (scopeKey) return scoped?.key === scopeKey ? scoped.list : []
     return articles
-  }, [showFavorites, articles, bookmarks, favoriteArticles])
+  }, [showFavorites, articles, bookmarks, favoriteArticles, scopeKey, scoped])
 
   const filtered = useMemo(() => {
     let list = baseList
@@ -530,7 +623,7 @@ export default function HomePage() {
                       >
                         <span>{text.all}</span>
                         <span className={`min-w-6 text-right ${activeTopic === null ? 'text-gray-300' : 'text-gray-400'}`}>
-                          {articles.length}
+                          {totalCount}
                         </span>
                       </button>
                       {TOPICS.map(({ key }) => ({ t: key, count: topicCounts.get(key) ?? 0 })).map(({ t, count }) => (
@@ -567,7 +660,7 @@ export default function HomePage() {
                 >
                   <span>{text.all}</span>
                   <span className={`min-w-9 text-right text-xs ${activeTopic === null && !showFavorites ? 'text-gray-300' : 'text-gray-400'}`}>
-                    {articles.length}
+                    {totalCount}
                   </span>
                 </button>
                 {TOPICS.map(({ key }) => ({ t: key, count: topicCounts.get(key) ?? 0 })).map(({ t, count }) => {
@@ -750,7 +843,7 @@ export default function HomePage() {
               </div>
             )}
 
-            {!loading && !showFavorites && (search || sourceFilter || activeTopic) && (
+            {!loading && !scopedLoading && !showFavorites && (search || sourceFilter || activeTopic) && (
               <p className="mt-2 text-xs text-gray-400">
                 {text.resultCount(filtered.length)}
                 {activeTopic && <span> · {getTopicLabel(activeTopic, displayLanguage)}</span>}
@@ -760,7 +853,7 @@ export default function HomePage() {
             )}
 
             <div id="article-results" ref={resultsTopRef} className="mt-4 scroll-mt-20 space-y-3 sm:scroll-mt-24">
-              {loading ? (
+              {loading || scopedLoading ? (
                 <div className="text-center py-16 text-gray-400 text-sm">{text.loading}</div>
               ) : showFavorites && favoritesLoading ? (
                 <div className="text-center py-16 text-gray-400 text-sm">{text.loadingFavorites}</div>
