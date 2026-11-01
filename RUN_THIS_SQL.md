@@ -54,6 +54,19 @@ grant execute on function public.get_saved_article_ids(uuid) to anon, authentica
 
 ---
 
+## ①-4 专题研究跨设备同步（待执行，2026-11-01 新增）
+
+「专题研究」页（/research）搜过的专题和综述，不执行时只存在当前浏览器里；执行后与收藏共用同一个同步码跨设备同步。
+新建 `user_research_topics` 表和 `get_research_topics` / `save_research_topic` / `remove_research_topic` 三个函数。
+
+打开 `supabase/migrations/20261101090000_add_research_topics.sql`，全选复制，粘贴到 SQL Editor 运行即可（可重复执行）。
+文件是纯英文的，末尾带检查语句：结果表应有 3 行，`anon_can_call` 都是 true。
+
+表不开放直接读写，只能经这三个函数按同步码访问；每个同步码最多 30 个专题，每个最多约 400 KB。
+执行前在本机搜过的专题，会在下次打开专题研究页时自动补传上去。
+
+---
+
 ## ①-3 每周任务自动补兴趣速览（已执行，2026-10-22 确认生效）
 
 不执行时，兴趣速览只在某台设备打开首页时才生成，没打开的那几周存档会空着。

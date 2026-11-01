@@ -651,6 +651,21 @@ export default function HomePage() {
           </div>
         ) : (
           <>
+            <Link
+              href="/research"
+              className="mb-6 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 transition-colors hover:border-gray-300"
+            >
+              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 text-blue-600">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-gray-900">{text.researchEntry}</span>
+                <span className="mt-0.5 block truncate text-xs text-gray-500">{text.researchEntryHint}</span>
+              </span>
+              <span className="text-gray-300">›</span>
+            </Link>
+
             {/* Hero */}
             <div className="flex flex-wrap items-center gap-2">
               <span

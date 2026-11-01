@@ -8,7 +8,8 @@ const BOOKMARK_STORAGE_KEY = 'bookmarks'
 // 本地数据已和哪个同步码的云端对齐过；和当前同步码不同，说明刚扫码加入了别的设备，本机原有的要并进去
 const BOOKMARK_SYNCED_DEVICE_KEY = 'bookmarks_synced_device'
 export const INTEREST_SYNCED_DEVICE_KEY = 'digest_interests_synced_device'
-const SYNCED_DEVICE_KEYS = [BOOKMARK_SYNCED_DEVICE_KEY, INTEREST_SYNCED_DEVICE_KEY]
+export const RESEARCH_SYNCED_DEVICE_KEY = 'research_topics_synced_device'
+const SYNCED_DEVICE_KEYS = [BOOKMARK_SYNCED_DEVICE_KEY, INTEREST_SYNCED_DEVICE_KEY, RESEARCH_SYNCED_DEVICE_KEY]
 // 还没写进云端的收藏改动：文章 id → 收藏 / 取消收藏（离线或请求失败时留着，下次打开补传）
 const BOOKMARK_PENDING_KEY = 'bookmarks_pending'
 
@@ -43,7 +44,7 @@ export const getBookmarkDeviceId = () => {
   if (sharedId && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sharedId)) {
     const previousId = localStorage.getItem(BOOKMARK_DEVICE_KEY)
     if (previousId && previousId !== sharedId) {
-      // 本机原来的数据属于旧同步码：记下来，收藏和兴趣同步时会把它们并进新的同步组
+      // 本机原来的数据属于旧同步码：记下来，收藏、兴趣和专题同步时会把它们并进新的同步组
       for (const key of SYNCED_DEVICE_KEYS) {
         if (!localStorage.getItem(key)) localStorage.setItem(key, previousId)
       }
