@@ -7,6 +7,7 @@ import { createClient } from '@supabase/supabase-js'
 import SyncDeviceDialog from '@/components/SyncDeviceDialog'
 import { UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
+import { parseInterestRange } from '@/lib/interestRange'
 import { MAX_INTERESTS, normalizeInterest, useInterestDigests } from '@/lib/useInterestDigests'
 import type { Article, DigestHighlight, DisplayLanguage, WeeklyDigest } from '@/lib/types'
 
@@ -19,6 +20,9 @@ const isStaticSite = Boolean(process.env.NEXT_PUBLIC_BASE_PATH)
 
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 const ACTIVE_INTEREST_KEY = 'digest_active_interest'
+const OVERVIEW_COLLAPSED_KEY = 'digest_overview_collapsed'
+// 兴趣速览每月一份：最近这么多期周报里都没有它的存档，就该生成新的一份了（与 scripts/generate_digest.py 一致）
+const INTEREST_MONTH_WEEKS = 4
 
 type LinkableArticle = Pick<Article, 'id' | 'source_url'>
 
@@ -61,23 +65,29 @@ const OVERVIEW_LINK_CLASS =
 
 const paperAnchorId = (articleId: string) => `paper-${articleId}`
 
-// 概览里的 [短语](编号)：本期论文里有对应卡片就页内跳转，否则退回到原文链接
+const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+const ARTICLE_REF_REGEX = new RegExp(`\\]\\((${UUID_PATTERN})\\)`, 'gi')
+
+// 兴趣速览里 [短语](文章id) 引用到的文章；旧的按周存档用的是 [短语](编号)，没有 id
+const extractArticleRefs = (text: string) =>
+  Array.from(text.matchAll(ARTICLE_REF_REGEX), (m) => m[1].toLowerCase())
+
+// 概览里的 [短语](编号) 或 [短语](文章id)：本期论文里有对应卡片就页内跳转，否则退回到原文链接
 function renderOverviewLinks(
   text: string,
-  orderedArticles: (LinkableArticle | undefined)[],
+  resolve: (ref: string) => LinkableArticle | undefined,
   cardIds: Set<string>,
   onJump: (articleId: string) => void
 ): ReactNode {
   const parts: ReactNode[] = []
-  const regex = /\[([^\]]+)\]\((\d+)\)/g
+  const regex = new RegExp(`\\[([^\\]]+)\\]\\((\\d+|${UUID_PATTERN})\\)`, 'gi')
   let lastIndex = 0
   let match: RegExpExecArray | null
   let key = 0
   while ((match = regex.exec(text)) !== null) {
     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index))
     const label = match[1]
-    const num = parseInt(match[2], 10)
-    const article = orderedArticles[num - 1]
+    const article = resolve(match[2].toLowerCase())
     if (article && cardIds.has(article.id)) {
       const articleId = article.id
       parts.push(
@@ -115,6 +125,10 @@ function renderOverviewLinks(
   return parts
 }
 
+// 编号指向某一期 article_ids 的位置（周报概览、旧的兴趣存档）
+const byPosition = (list: (LinkableArticle | undefined)[]) => (ref: string) =>
+  /^\d+$/.test(ref) ? list[parseInt(ref, 10) - 1] : undefined
+
 type HighlightWithArticle = DigestHighlight & { article?: Article }
 
 export default function HomePage() {
@@ -143,10 +157,15 @@ export default function HomePage() {
   const attemptedRef = useRef<Set<string>>(new Set()) // 本次打开页面已尝试生成过的「兴趣|周」
   const [failedKeys, setFailedKeys] = useState<Set<string>>(new Set())
   const [archiveArticles, setArchiveArticles] = useState<{ week: string; list: (LinkableArticle | undefined)[] } | null>(null)
+  const [linkedArticles, setLinkedArticles] = useState<Map<string, LinkableArticle>>(new Map())
+  const requestedRefsRef = useRef<Set<string>>(new Set())
+  const [overviewCollapsedChoice, setOverviewCollapsedChoice] = useState<boolean | null>(null) // null = 没选过，按默认
 
   useEffect(() => {
     const saved = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
     if (saved === 'zh' || saved === 'en') setDisplayLanguage(saved)
+    const collapsed = localStorage.getItem(OVERVIEW_COLLAPSED_KEY)
+    if (collapsed === '1' || collapsed === '0') setOverviewCollapsedChoice(collapsed === '1')
   }, [])
 
   useEffect(() => {
@@ -228,13 +247,14 @@ export default function HomePage() {
     try { localStorage.setItem(ACTIVE_INTEREST_KEY, interest) } catch {}
   }, [])
 
-  const generateFor = useCallback(async (interest: string) => {
+  // weeks 不传 = 近一个月
+  const generateFor = useCallback(async (interest: string, weeks?: number) => {
     setGeneratingSet((prev) => new Set(prev).add(interest))
     try {
       const resp = await fetch('/api/generate/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ interest }),
+        body: JSON.stringify(weeks ? { interest, weeks } : { interest }),
       })
       const data = await resp.json()
       if (!resp.ok || data.error) throw new Error(data.error || 'failed')
@@ -257,7 +277,8 @@ export default function HomePage() {
   }, [saveDigest])
 
   const submitInterest = async () => {
-    const value = normalizeInterest(interestInput)
+    const parsed = parseInterestRange(normalizeInterest(interestInput))
+    const value = normalizeInterest(parsed.interest)
     if (!value || !latestDigest) return
     if (isStaticSite) {
       setInterestError('static')
@@ -270,11 +291,13 @@ export default function HomePage() {
     }
     selectInterest(value)
     setInterestInput('')
-    if (exists) return // 已订阅：切过去即可，缺本周的话下面的自动生成会补上
+    // 已订阅又没写时间范围：切过去即可，到了该出新一月的时候下面的自动生成会补上；
+    // 写了范围（如「最近两个月 …」）就按这个范围重新生成，替换最新一份
+    if (exists && !parsed.weeks) return
     attemptedRef.current.add(`${value}|${latestDigest.week_start}`)
-    if (!(await generateFor(value))) {
+    if (!(await generateFor(value, parsed.weeks ?? undefined))) {
       setInterestError('failed')
-      setInterestInput(value)
+      setInterestInput(interestInput)
     }
   }
 
@@ -293,12 +316,24 @@ export default function HomePage() {
     setActiveWeek(null)
   }, [activeInterest, interestEntries, generatingSet])
 
-  // 每个已订阅的兴趣缺本周速览时自动补生成：先补正在看的，其余逐个在后台补
+  // 最近 INTEREST_MONTH_WEEKS 期周报的 week_start；兴趣在这几期里都没有存档，说明上一份已满一个月
+  const recentWeeks = useMemo(() => {
+    if (!latestDigest) return new Set<string>()
+    const weeks = digestWeeks.includes(latestDigest.week_start) ? digestWeeks : [latestDigest.week_start, ...digestWeeks]
+    return new Set(weeks.slice(0, INTEREST_MONTH_WEEKS))
+  }, [latestDigest, digestWeeks])
+  const isDue = useCallback(
+    (entry: { digests: { week_start: string }[] } | null | undefined) =>
+      !entry || !entry.digests.some((d) => recentWeeks.has(d.week_start)),
+    [recentWeeks]
+  )
+
+  // 每个已订阅的兴趣满一个月没有新速览时自动补生成（概括近一个月）：先补正在看的，其余逐个在后台补
   useEffect(() => {
     if (isStaticSite || !latestDigest || !interestsLoaded || generatingSet.size > 0) return
     const week = latestDigest.week_start
     const stale = interestEntries.filter(
-      (e) => !e.digests.some((d) => d.week_start === week) && !attemptedRef.current.has(`${e.interest}|${week}`)
+      (e) => isDue(e) && !attemptedRef.current.has(`${e.interest}|${week}`)
     )
     if (stale.length === 0) return
     const next = stale.find((e) => e.interest === activeInterest) ?? stale[0]
@@ -307,7 +342,7 @@ export default function HomePage() {
     void generateFor(next.interest).then((ok) => {
       if (!ok) setFailedKeys((prev) => new Set(prev).add(key))
     })
-  }, [latestDigest, interestsLoaded, interestEntries, activeInterest, generatingSet, failedKeys, generateFor])
+  }, [latestDigest, interestsLoaded, interestEntries, activeInterest, generatingSet, failedKeys, generateFor, isDue])
 
   const retryThisWeek = (interest: string) => {
     if (!latestDigest) return
@@ -385,9 +420,7 @@ export default function HomePage() {
   // 兴趣速览和下方正在看的是同一期：[短语](编号) 可以页内跳到卡片；否则单独取那一期清单，链接指向原文
   const interestOnViewedWeek = Boolean(digest && shownWeek === digest.week_start)
   const activeGenerating = Boolean(activeInterest && generatingSet.has(activeInterest))
-  const activeMissingThisWeek = Boolean(
-    latestDigest && activeInterest && !activeEntry?.digests.some((d) => d.week_start === latestDigest.week_start)
-  )
+  const activeMissingThisWeek = Boolean(latestDigest && activeInterest && isDue(activeEntry))
   const activeFailedThisWeek = Boolean(
     latestDigest && activeInterest && activeMissingThisWeek && failedKeys.has(`${activeInterest}|${latestDigest.week_start}`)
   )
@@ -398,9 +431,41 @@ export default function HomePage() {
       : (shownInterestDigest?.overview_en || shownInterestDigest?.overview_zh)
   ), [shownInterestDigest, displayLanguage])
 
-  // 往期速览的 [短语](编号) 对应的是那一周的论文清单，单独取来，链接指向原文
+  // 按月的兴趣速览用 [短语](文章id) 引用；旧的按周存档用 [短语](编号)，编号对应那一周的清单
+  const interestRefs = useMemo(
+    () => Array.from(new Set(extractArticleRefs(`${shownInterestDigest?.overview_zh ?? ''}\n${shownInterestDigest?.overview_en ?? ''}`))),
+    [shownInterestDigest]
+  )
+  const shownIsLegacy = Boolean(shownInterestDigest && interestRefs.length === 0 && /\]\(\d+\)/.test(
+    `${shownInterestDigest.overview_zh}\n${shownInterestDigest.overview_en}`
+  ))
+
+  // 引用到的文章不在当前这一期里的，取来 id 和原文链接
   useEffect(() => {
-    if (!supabase || !shownWeek || interestOnViewedWeek || archiveArticles?.week === shownWeek) return
+    if (!supabase || interestRefs.length === 0) return
+    const onPage = new Set(articles.map((a) => a.id))
+    const missing = interestRefs.filter((id) => !onPage.has(id) && !requestedRefsRef.current.has(id))
+    if (missing.length === 0) return
+    missing.forEach((id) => requestedRefsRef.current.add(id))
+    const client = supabase
+    void (async () => {
+      const { data, error } = await client.from('articles').select('id,source_url').in('id', missing)
+      if (error) {
+        console.error('interest linked articles query error:', error)
+        missing.forEach((id) => requestedRefsRef.current.delete(id))
+        return
+      }
+      setLinkedArticles((prev) => {
+        const next = new Map(prev)
+        for (const row of (data ?? []) as LinkableArticle[]) next.set(row.id, row)
+        return next
+      })
+    })()
+  }, [interestRefs, articles])
+
+  // 旧的按周存档：[短语](编号) 对应的是那一周的论文清单，单独取来，链接指向原文
+  useEffect(() => {
+    if (!supabase || !shownWeek || !shownIsLegacy || interestOnViewedWeek || archiveArticles?.week === shownWeek) return
     const cached = digestCacheRef.current.get(shownWeek)
     if (cached) {
       const byId = new Map(cached.articles.map((a) => [a.id, a]))
@@ -426,12 +491,34 @@ export default function HomePage() {
     }
     void loadArchive()
     return () => { cancelled = true }
-  }, [shownWeek, interestOnViewedWeek, archiveArticles?.week])
+  }, [shownWeek, shownIsLegacy, interestOnViewedWeek, archiveArticles?.week])
 
   const noCards = useMemo(() => new Set<string>(), [])
-  const interestArticles = interestOnViewedWeek
-    ? orderedArticles
-    : (archiveArticles?.week === shownWeek ? archiveArticles.list : [])
+  const pageArticlesById = useMemo(() => new Map(articles.map((a) => [a.id, a])), [articles])
+  const resolveInterestRef = useMemo(() => {
+    if (shownIsLegacy) {
+      return byPosition(interestOnViewedWeek
+        ? orderedArticles
+        : (archiveArticles?.week === shownWeek ? archiveArticles.list : []))
+    }
+    return (ref: string) => pageArticlesById.get(ref) ?? linkedArticles.get(ref)
+  }, [shownIsLegacy, interestOnViewedWeek, orderedArticles, archiveArticles, shownWeek, pageArticlesById, linkedArticles])
+  const resolveDigestRef = useMemo(() => byPosition(orderedArticles), [orderedArticles])
+
+  // 订阅了兴趣之后周报概览默认收起（兴趣速览更贴近需求），手动展开/收起过就记住
+  const overviewCollapsed = overviewCollapsedChoice ?? interestEntries.length > 0
+  const toggleOverview = () => {
+    const next = !overviewCollapsed
+    setOverviewCollapsedChoice(next)
+    try { localStorage.setItem(OVERVIEW_COLLAPSED_KEY, next ? '1' : '0') } catch {}
+  }
+
+  const interestPeriodLabel = (weekStart: string, isNewest: boolean) => {
+    const locale = displayLanguage === 'zh' ? 'zh-CN' : 'en-US'
+    const end = new Date(`${weekEndOf(weekStart)}T00:00:00`).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
+    const label = text.digestInterestPeriod(end)
+    return isNewest ? `${text.digestLatestWeek} · ${label}` : label
+  }
 
   const weekLabel = (weekStart: string) => {
     const period = formatPeriod(weekStart, weekEndOf(weekStart), displayLanguage)
@@ -706,8 +793,8 @@ export default function HomePage() {
                           aria-label={text.digestInterestWeek}
                           className="h-8 rounded-lg border border-blue-100 bg-white px-2 text-xs text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
                         >
-                          {activeEntry.digests.map((d) => (
-                            <option key={d.week_start} value={d.week_start}>{weekLabel(d.week_start)}</option>
+                          {activeEntry.digests.map((d, i) => (
+                            <option key={d.week_start} value={d.week_start}>{interestPeriodLabel(d.week_start, i === 0)}</option>
                           ))}
                         </select>
                       )}
@@ -722,7 +809,7 @@ export default function HomePage() {
                   )}
                 </div>
 
-                {activeGenerating && activeMissingThisWeek && (
+                {activeGenerating && (
                   <p className="mt-3 text-sm text-gray-500">{text.digestInterestGeneratingWeek}</p>
                 )}
                 {!activeGenerating && activeFailedThisWeek && activeInterest && (
@@ -744,8 +831,8 @@ export default function HomePage() {
                       <p key={i} className="text-[16px] leading-8 text-gray-800">
                         {renderOverviewLinks(
                           paragraph,
-                          interestArticles,
-                          interestOnViewedWeek ? cardIds : noCards,
+                          resolveInterestRef,
+                          shownIsLegacy && !interestOnViewedWeek ? noCards : cardIds,
                           jumpToPaper
                         )}
                       </p>
@@ -753,8 +840,10 @@ export default function HomePage() {
                   </div>
                 )}
 
-                {shownInterestDigest && !interestOnViewedWeek && (
-                  <p className="mt-4 text-xs text-gray-400">{text.digestInterestArchiveNote}</p>
+                {shownInterestDigest && (!shownIsLegacy || !interestOnViewedWeek) && (
+                  <p className="mt-4 text-xs text-gray-400">
+                    {shownIsLegacy ? text.digestInterestArchiveNote : text.digestInterestMonthlyNote}
+                  </p>
                 )}
               </section>
             )}
@@ -763,17 +852,59 @@ export default function HomePage() {
             <div aria-busy={switchingWeek} className={`transition-opacity ${switchingWeek ? 'opacity-50' : ''}`}>
               {/* 综合概览 */}
               <section className="mt-10">
-                <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-                  {viewingLatest ? text.digestOverviewTitle : text.digestOverviewTitlePast}
-                </h3>
-                <div className="mt-4 space-y-4">
-                  {overviewParagraphs.map((paragraph, i) => (
-                    <p key={i} className="text-[16px] leading-8 text-gray-800">
-                      {renderOverviewLinks(paragraph, orderedArticles, cardIds, jumpToPaper)}
-                    </p>
-                  ))}
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                    {viewingLatest ? text.digestOverviewTitle : text.digestOverviewTitlePast}
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={toggleOverview}
+                    aria-expanded={!overviewCollapsed}
+                    aria-controls="digest-overview-body"
+                    className="-mr-2 inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  >
+                    {overviewCollapsed ? text.digestOverviewExpand : text.digestOverviewCollapse}
+                    <svg
+                      aria-hidden="true"
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className={`transition-transform ${overviewCollapsed ? '' : 'rotate-180'}`}
+                    >
+                      <path d="m6 9 6 6 6-6" />
+                    </svg>
+                  </button>
                 </div>
-                <p className="mt-5 text-xs text-gray-400">{text.digestDisclaimer}</p>
+                <div id="digest-overview-body">
+                  {overviewCollapsed ? (
+                    // 收起时只露出开头两行，点一下展开
+                    <button
+                      type="button"
+                      onClick={toggleOverview}
+                      className="mt-3 block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                    >
+                      <span className="line-clamp-2 text-[16px] leading-8 text-gray-500">
+                        {(overviewParagraphs[0] ?? '').replace(/\[([^\]]+)\]\(\d+\)/g, '$1')}
+                      </span>
+                    </button>
+                  ) : (
+                    <>
+                      <div className="mt-4 space-y-4">
+                        {overviewParagraphs.map((paragraph, i) => (
+                          <p key={i} className="text-[16px] leading-8 text-gray-800">
+                            {renderOverviewLinks(paragraph, resolveDigestRef, cardIds, jumpToPaper)}
+                          </p>
+                        ))}
+                      </div>
+                      <p className="mt-5 text-xs text-gray-400">{text.digestDisclaimer}</p>
+                    </>
+                  )}
+                </div>
               </section>
 
               {/* 分隔 */}

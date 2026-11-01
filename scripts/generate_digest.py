@@ -6,14 +6,16 @@ Produces:
 
 Stores everything in `weekly_digests` for the homepage to display.
 
-Then writes this week's interest overview (兴趣速览) for every subscribed interest
-into `user_interest_digests`, so each interest's weekly archive has no gaps even
-for weeks the subscriber never opened the site.
+Then writes a monthly interest overview (兴趣速览) for every subscribed interest
+whose latest overview is a month old, into `user_interest_digests`, so each
+interest's monthly archive has no gaps even if the subscriber never opened the site.
+An overview covers the latest INTEREST_WINDOW_WEEKS weekly digests and is keyed by
+the newest week's week_start. Links are stored as [text](article uuid).
 
 Usage:
   python scripts/generate_digest.py                    # weekly digest + interest overviews
   python scripts/generate_digest.py --dry-run          # print the plan, no model calls, no writes
-  python scripts/generate_digest.py --interests-only   # only fill interest overviews for the latest digest
+  python scripts/generate_digest.py --interests-only   # only fill due interest overviews, window ending at the latest digest
   python scripts/generate_digest.py --interests-only --week-start 2026-10-12
 """
 
@@ -23,6 +25,7 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
 import time
 from zoneinfo import ZoneInfo
 
@@ -46,6 +49,8 @@ HIGHLIGHT_BATCH = int(os.environ.get("DIGEST_HIGHLIGHT_BATCH", "10"))
 REQUEST_RETRIES = int(os.environ.get("DIGEST_REQUEST_RETRIES", "3"))
 INTEREST_JOB_TOKEN = os.environ.get("INTEREST_DIGEST_JOB_TOKEN", "").strip()
 INTEREST_MAX = int(os.environ.get("INTEREST_DIGEST_MAX_INTERESTS", "100"))
+# 兴趣速览每月一份：最近这么多期周报里都没有存档就该生成，内容也概括这么多期（与首页 INTEREST_MONTH_WEEKS 一致）
+INTEREST_WINDOW_WEEKS = 4
 # 仓库是公开的，Actions 日志人人可见：CI 里不打印兴趣原文、同步码和数据库报错详情
 IN_CI = os.environ.get("GITHUB_ACTIONS") == "true"
 
@@ -280,15 +285,13 @@ def load_articles_in_order(ids: list[str]) -> list[dict | None]:
     return [by_id.get(article_id) for article_id in ids]
 
 
-def build_interest_listing(articles: list[dict | None]) -> str:
-    # 与 web/src/app/api/generate/route.ts 一致：编号 = 在 weekly_digests.article_ids 里的位置，
-    # 前端按位置把 [短语](编号) 映射到卡片，所以缺失的条目跳过但不重排
+def build_interest_listing(articles: list[dict]) -> str:
+    # 与 web/src/app/api/generate/route.ts 一致：条目多时缩短摘要，控制提示词长度
+    abstract_limit = max(80, min(260, 20000 // max(1, len(articles))))
     lines = []
     for i, a in enumerate(articles, start=1):
-        if not a:
-            continue
         title = a.get("title_zh") or a.get("title_original") or ""
-        abstract = (a.get("abstract_zh") or a.get("abstract_original") or "")[:260]
+        abstract = (a.get("abstract_zh") or a.get("abstract_original") or "")[:abstract_limit]
         source = a.get("source_name") or ""
         line = f"{i}. {title}"
         if source:
@@ -299,16 +302,37 @@ def build_interest_listing(articles: list[dict | None]) -> str:
     return "\n".join(lines)
 
 
-def generate_interest_overview(articles: list[dict | None], interest: str) -> tuple[str, str]:
+def _format_day(iso: str) -> str:
+    _, month, day = (int(part) for part in iso.split("-"))
+    return f"{month}月{day}日"
+
+
+def _links_to_ids(text: str, articles: list[dict]) -> str:
+    # 编号只在这份清单里有意义，存下来之前换成文章 id，首页不必再知道当时的清单
+    def replace(match: re.Match) -> str:
+        num = int(match.group(2))
+        if 1 <= num <= len(articles):
+            return f"[{match.group(1)}]({articles[num - 1]['id']})"
+        return match.group(1)
+
+    return re.sub(r"\[([^\]]+)\]\((\d+)\)", replace, text.strip())
+
+
+def generate_interest_overview(
+    articles: list[dict], interest: str, period: str, week_count: int
+) -> tuple[str, str]:
     # prompt 与 route.ts 的 generateInterestOverview 保持一致，改一边要同步另一边
     listing = build_interest_listing(articles)
-    prompt = f"""你是学前教育领域的研究助理。以下是本周收录的内容（论文/实践/政策）。用户感兴趣的主题是：「{interest}」。
+    single = week_count == 1
+    length = "200-300 字，2-3 段" if single else "300-450 字，3-4 段，把相关内容归纳成几条主线，不要逐条罗列"
+    en_length = "100-160" if single else "150-230"
+    prompt = f"""你是学前教育领域的研究助理。以下是{period}（共 {week_count} 期周报）收录的内容（论文/实践/政策）。用户感兴趣的主题是：「{interest}」。
 
 请写一段「兴趣概览」：
-1. 只聚焦与「{interest}」相关的内容，忽略无关项；如果相关内容很少，如实说明「本周与「{interest}」直接相关的内容较少」。
-2. 通俗大白话（面向一线幼教工作者、家长和普通读者），200-300 字，2-3 段。
+1. 只聚焦与「{interest}」相关的内容，忽略无关项；如果相关内容很少，如实说明「这段时间与「{interest}」直接相关的内容较少」。
+2. 通俗大白话（面向一线幼教工作者、家长和普通读者），{length}。
 3. 提到具体条目时用 [短语](编号) 内联标注，编号对应上面清单的序号。
-4. 同时写一份英文版 overview_en（100-160 词）。
+4. 同时写一份英文版 overview_en（{en_length} 词）。
 
 输出严格为 JSON（不要其他内容）：
 {{"overview_zh":"...","overview_en":"..."}}
@@ -316,11 +340,23 @@ def generate_interest_overview(articles: list[dict | None], interest: str) -> tu
 内容清单：
 {listing}"""
     data = _chat_json(prompt, max_tokens=2400, temperature=0.5)
-    zh = (data.get("overview_zh") or "").strip()
-    en = (data.get("overview_en") or "").strip()
+    zh = _links_to_ids(data.get("overview_zh") or "", articles)
+    en = _links_to_ids(data.get("overview_en") or "", articles)
     if not zh:
         raise ValueError("模型未返回中文概览")
     return zh, en
+
+
+def load_interest_window(week_start: str) -> list[dict]:
+    """截至 week_start（含）最近 INTEREST_WINDOW_WEEKS 期周报，新的在前。"""
+    return (
+        supabase.table("weekly_digests")
+        .select("week_start,week_end,article_ids")
+        .lte("week_start", week_start)
+        .order("week_start", desc=True)
+        .limit(INTEREST_WINDOW_WEEKS)
+        .execute()
+    ).data or []
 
 
 def _safe_error(error: Exception) -> str:
@@ -332,24 +368,38 @@ def _safe_error(error: Exception) -> str:
     return str(error)
 
 
-def generate_interest_digests(week_start: str, articles: list[dict | None], dry_run: bool) -> None:
-    """给每个订阅中的兴趣补上这一期概览：同一兴趣文本只调用一次模型，再写给所有订阅它的同步码。
+def generate_interest_digests(week_start: str, dry_run: bool) -> None:
+    """给满一个月没有新速览的订阅补上一份，概括截至 week_start 的近一个月。
 
+    同一兴趣文本只调用一次模型，再写给所有到期的同步码。
     失败只影响该兴趣（打印后继续），不让整个任务失败；用户打开首页时前端仍会补生成。
     """
-    print(f"\n兴趣速览（{week_start} 这一期）…")
+    print(f"\n兴趣速览（截至 {week_start} 这一期的近一个月）…")
     if not INTEREST_JOB_TOKEN:
         print("  [SKIP] 未配置 INTEREST_DIGEST_JOB_TOKEN，跳过（启用步骤见 RUN_THIS_SQL.md ①-3）")
         return
-    if not any(articles):
-        print("  [SKIP] 这一期没有可用条目")
+
+    window = load_interest_window(week_start)
+    if dry_run and (not window or window[0]["week_start"] != week_start):
+        print("  [DRY] 这一期还没写入，下面的范围只含已有的几期")
+    ids = list(dict.fromkeys(i for row in window for i in (row.get("article_ids") or [])))
+    articles = [a for a in load_articles_in_order(ids) if a]
+    if not articles:
+        print("  [SKIP] 这段时间没有可用条目")
         return
+    # 首页和这里都以周报的 week_start 作存档键，所以「最近几期里都没有存档」= 上一份已满一个月
+    recent_weeks = list(dict.fromkeys([week_start] + [row["week_start"] for row in window]))[:INTEREST_WINDOW_WEEKS]
+    period = f"{_format_day(window[-1]['week_start'])}至{_format_day(window[0]['week_end'])}" if window else week_start
+    print(f"  范围：{period}，{len(window)} 期周报、{len(articles)} 条")
 
     try:
-        targets = supabase.rpc(
-            "list_interest_digest_targets",
-            {"p_job_token": INTEREST_JOB_TOKEN, "p_week_start": week_start},
-        ).execute().data or []
+        per_week = [
+            supabase.rpc(
+                "list_interest_digest_targets",
+                {"p_job_token": INTEREST_JOB_TOKEN, "p_week_start": week},
+            ).execute().data or []
+            for week in recent_weeks
+        ]
     except Exception as error:
         hint = "（请先执行 RUN_THIS_SQL.md ①-2、①-3）" if "PGRST202" in str(error) else ""
         print(f"  [WARN] 读取兴趣订阅失败{hint}: {_safe_error(error)}")
@@ -357,12 +407,23 @@ def generate_interest_digests(week_start: str, articles: list[dict | None], dry_
             print("::warning::兴趣速览未执行：读取订阅失败")
         return
 
+    # 某个订阅在每一期都待生成，才说明它最近一个月都没有速览
+    targets = []
+    for target in per_week[0]:
+        due = list(target.get("pending_device_ids") or [])
+        for rows in per_week[1:]:
+            pending = next((set(t.get("pending_device_ids") or []) for t in rows if t["interest"] == target["interest"]), set())
+            due = [device for device in due if device in pending]
+        total = len(target.get("pending_device_ids") or []) + int(target.get("done_count") or 0)
+        targets.append({"interest": target["interest"], "pending_device_ids": due, "done_count": total - len(due)})
+    targets.sort(key=lambda t: (-len(t["pending_device_ids"]), t["interest"]))
+
     pending = [t for t in targets if t.get("pending_device_ids")]
     pending_pairs = sum(len(t["pending_device_ids"]) for t in pending)
     done_pairs = sum(int(t.get("done_count") or 0) for t in targets)
     print(
         f"  订阅中的兴趣 {len(targets)} 个：待生成 {len(pending)} 个兴趣（{pending_pairs} 个订阅），"
-        f"已有这一期的订阅 {done_pairs} 个"
+        f"近一个月已有速览的订阅 {done_pairs} 个"
     )
     if len(pending) > INTEREST_MAX:
         print(f"  [WARN] 待生成兴趣超过上限 {INTEREST_MAX}，本次只处理订阅数最多的前 {INTEREST_MAX} 个")
@@ -376,11 +437,11 @@ def generate_interest_digests(week_start: str, articles: list[dict | None], dry_
         if dry_run:
             print(
                 f"  [DRY] {label} → 将生成 1 次并写给 {len(device_ids)} 个订阅"
-                f"（已有这一期 {int(target.get('done_count') or 0)} 个）"
+                f"（近一个月已有 {int(target.get('done_count') or 0)} 个）"
             )
             continue
         try:
-            overview_zh, overview_en = generate_interest_overview(articles, interest)
+            overview_zh, overview_en = generate_interest_overview(articles, interest, period, len(window))
             written = supabase.rpc(
                 "save_interest_digest_for_devices",
                 {
@@ -413,17 +474,16 @@ def fill_interests_for_existing_digest(week_start: str | None, dry_run: bool) ->
     if not digest:
         print(f"[SKIP] 找不到{week_start or '最新'}一期 weekly_digests，无法生成兴趣速览")
         return
-    articles = load_articles_in_order(digest.get("article_ids") or [])
-    generate_interest_digests(digest["week_start"], articles, dry_run)
+    generate_interest_digests(digest["week_start"], dry_run)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="生成每周研究速览，并为订阅的兴趣补上当周概览")
+    parser = argparse.ArgumentParser(description="生成每周研究速览，并为满一个月的兴趣补上新一份月度概览")
     parser.add_argument("--dry-run", action="store_true", help="只打印将要生成什么：不调用模型、不写库")
     parser.add_argument(
         "--interests-only",
         action="store_true",
-        help="不重新生成本周速览，只为已有一期补兴趣概览（默认最新一期）",
+        help="不重新生成本周速览，只补到期的兴趣概览（范围截至最新一期，或 --week-start 指定的那期）",
     )
     parser.add_argument("--week-start", help="配合 --interests-only 指定某一期，格式 YYYY-MM-DD")
     args = parser.parse_args()
@@ -464,7 +524,7 @@ def run() -> None:
     print(f"共 {len(articles)} 篇论文")
     if args.dry_run:
         print(f"[DRY] 将生成本周概览和分点总结，写入 weekly_digests（week_start={week_start.isoformat()}）")
-        generate_interest_digests(week_start.isoformat(), articles, dry_run=True)
+        generate_interest_digests(week_start.isoformat(), dry_run=True)
         return
 
     print("生成概览…")
@@ -493,8 +553,7 @@ def run() -> None:
     print("概览：")
     print(overview_zh)
 
-    # articles 的顺序就是刚写入的 article_ids，编号 1..N 与前端一致
-    generate_interest_digests(week_start.isoformat(), articles, dry_run=False)
+    generate_interest_digests(week_start.isoformat(), dry_run=False)
 
 
 if __name__ == "__main__":

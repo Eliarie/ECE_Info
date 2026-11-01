@@ -10,7 +10,7 @@ on:
         type: boolean
         default: false
       interests_only:
-        description: '只为最新一期补兴趣速览，不重新生成本周速览'
+        description: '只补满一个月的兴趣速览（概括截至最新一期的近一个月），不重新生成本周速览'
         type: boolean
         default: false
 
