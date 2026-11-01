@@ -54,7 +54,7 @@ grant execute on function public.get_saved_article_ids(uuid) to anon, authentica
 
 ---
 
-## ①-4 专题研究跨设备同步（待执行，2026-11-01 新增）
+## ①-4 专题研究跨设备同步（已执行，2026-11-02 确认生效）
 
 「专题研究」页（/research）搜过的专题和综述，不执行时只存在当前浏览器里；执行后与收藏共用同一个同步码跨设备同步。
 新建 `user_research_topics` 表和 `get_research_topics` / `save_research_topic` / `remove_research_topic` 三个函数。
