@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
 import Pagination from '@/components/Pagination'
+import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from '@/components/NavIconButton'
 import SyncDeviceDialog from '@/components/SyncDeviceDialog'
 import { getTopicLabel, TOPICS, UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
@@ -473,71 +474,34 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <nav className="sticky top-0 z-40 border-b border-gray-200 bg-white/95 backdrop-blur" aria-label={text.mainNavigation}>
-        <div className="mx-auto flex min-h-14 max-w-7xl items-center gap-3 px-4 py-2 sm:min-h-16">
+        <div className="mx-auto flex min-h-14 max-w-6xl items-center gap-3 px-4 py-2 sm:min-h-16 lg:px-8">
           <div className="min-w-0 flex-1">
-            <Link
-              href="/"
-              className="mb-0.5 inline-flex items-center gap-1 text-xs font-medium text-gray-500 transition-colors hover:text-gray-900"
-            >
-              <span aria-hidden="true">←</span>
-              {text.digestBackHome}
-            </Link>
             <h1 className="truncate text-base font-semibold text-gray-900 sm:text-lg">
-              <span className="sm:hidden">{text.brandCompact}</span>
-              <span className="hidden sm:inline">{text.brand}</span>
+              <Link href="/" title={text.navHomeTip}>
+                <span className="sm:hidden">{text.brandCompact}</span>
+                <span className="hidden sm:inline">{text.brand}</span>
+              </Link>
             </h1>
             <p className="mt-0.5 hidden truncate text-xs text-gray-500 lg:block">
               {text.subtitle}
             </p>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-3 sm:gap-5">
-            <button
-              type="button"
+          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
+            <NavIconButton label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
+            <NavIconButton label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} active={!showFavorites} />
+            <NavIconButton
+              label={showFavorites ? text.backToArticles : text.navFavoritesTip(bookmarks.size)}
               onClick={() => {
                 if (showFavorites) exitFavorites()
                 else enterFavorites()
               }}
-              aria-pressed={showFavorites}
-              aria-label={showFavorites ? text.backToArticles : text.viewFavorites(bookmarks.size)}
-              title={showFavorites ? text.backToArticles : text.favorites}
-              className={`flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md border px-2 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3 ${
-                showFavorites
-                  ? 'border-amber-200 bg-amber-50 text-amber-700'
-                  : 'border-gray-200 bg-white text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-              }`}
-            >
-              <svg
-                aria-hidden="true"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill={showFavorites ? 'currentColor' : 'none'}
-                stroke="currentColor"
-                strokeWidth="2"
-              >
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-              </svg>
-              <span className="hidden sm:inline">{text.favorites}</span>
-              {bookmarks.size > 0 && (
-                <span className={`min-w-4 text-center text-[11px] ${showFavorites ? 'text-amber-700' : 'text-gray-400'}`}>
-                  {bookmarks.size}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={openBookmarkSync}
-              aria-label={text.syncFavorites}
-              title={text.syncFavorites}
-              className="flex h-9 min-w-9 items-center justify-center gap-1.5 rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 sm:px-3"
-            >
-              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M8 12h8M10 8l-4 4 4 4M14 8l4 4-4 4" />
-              </svg>
-              <span className="hidden lg:inline">{text.syncFavorites}</span>
-            </button>
+              pressed={showFavorites}
+              active={showFavorites}
+              icon={<BookmarkIcon filled={showFavorites || bookmarks.size > 0} />}
+              badge={bookmarks.size}
+            />
+            <NavIconButton label={text.navSyncTip} onClick={openBookmarkSync} icon={<SyncIcon />} />
 
             <div
               className="inline-flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5"
@@ -573,7 +537,7 @@ export default function HomePage() {
         <SyncDeviceDialog link={syncLink} language={displayLanguage} onClose={() => setSyncLink(null)} />
       )}
 
-      <div className="mx-auto max-w-7xl px-4 py-4 sm:py-5 lg:py-6">
+      <div className="mx-auto max-w-6xl px-4 py-4 sm:py-5 lg:px-8 lg:py-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:gap-12">
           {/* 主题目录：手机/平板折叠菜单，大屏左侧竖排 */}
           <aside className="lg:w-60 lg:flex-shrink-0">

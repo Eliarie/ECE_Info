@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { createClient } from '@supabase/supabase-js'
+import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from '@/components/NavIconButton'
 import SyncDeviceDialog from '@/components/SyncDeviceDialog'
 import { UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
@@ -536,66 +537,154 @@ export default function HomePage() {
       ? new Date(a.published_at).toLocaleDateString(displayLanguage === 'zh' ? 'zh-CN' : 'en-US')
       : null
 
+  const periodControls = digest && (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <span
+          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+            viewingLatest ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
+          }`}
+        >
+          {viewingLatest ? text.digestTitle : text.digestPastTitle}
+        </span>
+        {digestWeeks.length > 1 && (
+          <select
+            value={pendingWeek ?? digest.week_start}
+            onChange={(e) => void selectDigestWeek(e.target.value)}
+            aria-label={text.digestWeekSelect}
+            className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          >
+            {digestWeeks.map((week) => (
+              <option key={week} value={week}>{weekLabel(week)}</option>
+            ))}
+          </select>
+        )}
+        {!viewingLatest && latestDigest && (
+          <button
+            type="button"
+            onClick={() => void selectDigestWeek(latestDigest.week_start)}
+            className="h-8 rounded-lg px-2 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 hover:text-blue-900"
+          >
+            {text.digestBackToLatest}
+          </button>
+        )}
+        {switchingWeek && <span className="text-xs text-gray-400">{text.loading}</span>}
+      </div>
+      {weekLoadFailed && <p className="mt-2 text-sm text-red-600">{text.digestWeekLoadFailed}</p>}
+    </>
+  )
+
+  const interestControls = digest && (
+    <>
+      <form
+        className="mt-6 flex items-center gap-2 lg:mt-0"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void submitInterest()
+        }}
+      >
+        <div className="relative flex-1">
+          <svg
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <circle cx="11" cy="11" r="8" />
+            <path d="m21 21-4.3-4.3" />
+          </svg>
+          <input
+            type="text"
+            value={interestInput}
+            onChange={(e) => setInterestInput(e.target.value)}
+            maxLength={60}
+            placeholder={text.digestInterestPlaceholder}
+            aria-label={text.digestInterestPlaceholder}
+            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={!normalizeInterest(interestInput) || generatingSet.has(normalizeInterest(interestInput))}
+          className="flex-shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+        >
+          {text.digestInterestGenerate}
+        </button>
+      </form>
+
+      {interestError && (
+        <p className="mt-3 text-sm text-red-600">
+          {interestError === 'limit'
+            ? text.digestInterestLimit(MAX_INTERESTS)
+            : interestError === 'static'
+              ? text.digestInterestStaticSite
+              : text.digestInterestError}
+        </p>
+      )}
+
+      {/* 我的兴趣：每个兴趣一个标签，点哪个看哪个 */}
+      {(interestEntries.length > 0 || activeGenerating) && (
+        <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label={text.digestInterestList}>
+          {[
+            ...interestEntries.map((e) => e.interest),
+            ...(activeInterest && !activeEntry && activeGenerating ? [activeInterest] : []),
+          ].map((name) => {
+            const active = name === activeInterest
+            return (
+              <button
+                key={name}
+                type="button"
+                onClick={() => selectInterest(name)}
+                aria-pressed={active}
+                className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  active
+                    ? 'bg-blue-600 text-white'
+                    : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900'
+                }`}
+              >
+                {name}
+                {generatingSet.has(name) && (
+                  <span
+                    aria-hidden="true"
+                    className={`h-1.5 w-1.5 animate-pulse rounded-full ${active ? 'bg-white' : 'bg-blue-500'}`}
+                  />
+                )}
+              </button>
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
+
   return (
     <div className="min-h-screen bg-gray-50">
       <nav
         className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur"
         aria-label={text.mainNavigation}
       >
-        <div className="mx-auto flex min-h-14 max-w-3xl items-center gap-3 px-4 py-2 sm:min-h-16">
+        <div className="mx-auto flex min-h-14 max-w-6xl items-center gap-3 px-4 py-2 sm:min-h-16 lg:px-8">
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-semibold tracking-tight text-gray-900 sm:text-lg">
-              {text.brand}
+              <Link href="/">{text.brand}</Link>
             </h1>
             <p className="mt-0.5 hidden truncate text-xs text-gray-500 sm:block">{text.subtitle}</p>
           </div>
 
-          <div className="flex flex-shrink-0 items-center gap-2">
-            <Link
+          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
+            <NavIconButton label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
+            <NavIconButton label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
+            <NavIconButton
+              label={text.navFavoritesTip(bookmarks.size)}
               href="/browse/?favorites=1"
-              aria-label={text.viewFavorites(bookmarks.size)}
-              title={text.favorites}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 sm:px-3"
-            >
-              <svg
-                aria-hidden="true"
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
-                fill={bookmarks.size > 0 ? 'currentColor' : 'none'}
-                stroke="currentColor"
-                strokeWidth="2"
-                className={bookmarks.size > 0 ? 'text-amber-500' : ''}
-              >
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-              </svg>
-              <span className="hidden sm:inline">{text.favorites}</span>
-              {bookmarks.size > 0 && (
-                <span className="min-w-4 text-center text-[11px] text-gray-400">{bookmarks.size}</span>
-              )}
-            </Link>
-
-            <button
-              type="button"
-              onClick={() => setSyncLink(getSyncLink())}
-              aria-label={text.syncFavorites}
-              title={text.syncFavorites}
-              className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900 sm:px-3"
-            >
-              <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <rect x="2" y="4" width="13" height="10" rx="1.5" />
-                <path d="M6 18h5" />
-                <rect x="16" y="8" width="6" height="12" rx="1.5" />
-              </svg>
-              <span className="hidden sm:inline">{text.syncFavorites}</span>
-            </button>
-
-            <Link
-              href="/browse"
-              className="flex h-9 items-center rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-900"
-            >
-              {text.digestBrowse}
-            </Link>
+              icon={<BookmarkIcon filled={bookmarks.size > 0} />}
+              badge={bookmarks.size}
+            />
+            <NavIconButton label={text.navSyncTip} onClick={() => setSyncLink(getSyncLink())} icon={<SyncIcon />} />
 
             <div
               className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5"
@@ -631,7 +720,7 @@ export default function HomePage() {
         <SyncDeviceDialog link={syncLink} language={displayLanguage} onClose={() => setSyncLink(null)} />
       )}
 
-      <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12">
+      <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12 lg:max-w-6xl lg:px-8 lg:py-10">
         {loading ? (
           <div className="py-24 text-center text-sm text-gray-400">{text.loading}</div>
         ) : !hasSupabaseEnv ? (
@@ -651,378 +740,293 @@ export default function HomePage() {
           </div>
         ) : (
           <>
-            <Link
-              href="/research"
-              className="mb-6 flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 transition-colors hover:border-gray-300"
-            >
-              <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="flex-shrink-0 text-blue-600">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <span className="min-w-0 flex-1">
-                <span className="block text-sm font-medium text-gray-900">{text.researchEntry}</span>
-                <span className="mt-0.5 block truncate text-xs text-gray-500">{text.researchEntryHint}</span>
-              </span>
-              <span className="text-gray-300">›</span>
-            </Link>
-
-            {/* Hero */}
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                  viewingLatest ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700'
-                }`}
-              >
-                {viewingLatest ? text.digestTitle : text.digestPastTitle}
-              </span>
-              {digestWeeks.length > 1 && (
-                <select
-                  value={pendingWeek ?? digest.week_start}
-                  onChange={(e) => void selectDigestWeek(e.target.value)}
-                  aria-label={text.digestWeekSelect}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-2 text-xs text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                >
-                  {digestWeeks.map((week) => (
-                    <option key={week} value={week}>{weekLabel(week)}</option>
-                  ))}
-                </select>
-              )}
-              {!viewingLatest && latestDigest && (
-                <button
-                  type="button"
-                  onClick={() => void selectDigestWeek(latestDigest.week_start)}
-                  className="h-8 rounded-lg px-2 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-50 hover:text-blue-900"
-                >
-                  {text.digestBackToLatest}
-                </button>
-              )}
-              {switchingWeek && <span className="text-xs text-gray-400">{text.loading}</span>}
-            </div>
-            {weekLoadFailed && <p className="mt-2 text-sm text-red-600">{text.digestWeekLoadFailed}</p>}
-            <h2 className="mt-4 text-3xl font-bold tracking-tight text-gray-900 sm:text-4xl">
-              {formatPeriod(digest.week_start, digest.week_end, displayLanguage)}
-            </h2>
-            <p className="mt-2 text-sm text-gray-500">
-              {(viewingLatest ? text.digestCount : text.digestCountPast)(digest.article_count || orderedArticles.length)}
-              <span className="mx-1.5 text-gray-300">·</span>
-              {displayLanguage === 'zh' ? 'AI 自动生成' : 'AI-generated'}
-            </p>
-
-            {/* 兴趣生成 */}
-            <form
-              className="mt-6 flex items-center gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void submitInterest()
-              }}
-            >
-              <div className="relative flex-1">
-                <svg
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="11" cy="11" r="8" />
-                  <path d="m21 21-4.3-4.3" />
-                </svg>
-                <input
-                  type="text"
-                  value={interestInput}
-                  onChange={(e) => setInterestInput(e.target.value)}
-                  maxLength={60}
-                  placeholder={text.digestInterestPlaceholder}
-                  aria-label={text.digestInterestPlaceholder}
-                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={!normalizeInterest(interestInput) || generatingSet.has(normalizeInterest(interestInput))}
-                className="flex-shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-              >
-                {text.digestInterestGenerate}
-              </button>
-            </form>
-
-            {interestError && (
-              <p className="mt-3 text-sm text-red-600">
-                {interestError === 'limit'
-                  ? text.digestInterestLimit(MAX_INTERESTS)
-                  : interestError === 'static'
-                    ? text.digestInterestStaticSite
-                    : text.digestInterestError}
-              </p>
-            )}
-
-            {/* 我的兴趣：每个兴趣一个标签，点哪个看哪个 */}
-            {(interestEntries.length > 0 || activeGenerating) && (
-              <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label={text.digestInterestList}>
-                {[
-                  ...interestEntries.map((e) => e.interest),
-                  ...(activeInterest && !activeEntry && activeGenerating ? [activeInterest] : []),
-                ].map((name) => {
-                  const active = name === activeInterest
-                  return (
-                    <button
-                      key={name}
-                      type="button"
-                      onClick={() => selectInterest(name)}
-                      aria-pressed={active}
-                      className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                        active
-                          ? 'bg-blue-600 text-white'
-                          : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900'
-                      }`}
-                    >
-                      {name}
-                      {generatingSet.has(name) && (
-                        <span
-                          aria-hidden="true"
-                          className={`h-1.5 w-1.5 animate-pulse rounded-full ${active ? 'bg-white' : 'bg-blue-500'}`}
-                        />
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* 兴趣概览 */}
-            {activeInterest && (activeEntry || activeGenerating) && (
-              <section className="mt-6 rounded-xl border border-blue-100 bg-blue-50/50 p-5 sm:p-6">
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                  <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-600">
-                    {text.digestInterestSectionTitle(activeInterest)}
-                  </h3>
-                  {activeEntry && (
-                    <div className="flex items-center gap-2">
-                      {activeEntry.digests.length > 0 && (
-                        <select
-                          value={shownWeek ?? ''}
-                          onChange={(e) => setActiveWeek(e.target.value)}
-                          aria-label={text.digestInterestWeek}
-                          className="h-8 rounded-lg border border-blue-100 bg-white px-2 text-xs text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                        >
-                          {activeEntry.digests.map((d, i) => (
-                            <option key={d.week_start} value={d.week_start}>{interestPeriodLabel(d.week_start, i === 0)}</option>
-                          ))}
-                        </select>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => deleteInterest(activeEntry.interest)}
-                        className="h-8 rounded-lg px-2 text-xs font-medium text-gray-400 transition-colors hover:bg-white hover:text-red-600"
-                      >
-                        {text.digestInterestDelete}
-                      </button>
-                    </div>
+            <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
+              {/* 大屏左栏：期数、兴趣、本期目录，滚动时固定 */}
+              <aside className="hidden lg:block">
+                <div className="sticky top-24 max-h-[calc(100vh-7rem)] space-y-8 overflow-y-auto pb-6 pr-1">
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-400">{text.digestPeriodLabel}</p>
+                    {periodControls}
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-400">{text.digestInterestsLabel}</p>
+                    {interestControls}
+                  </div>
+                  {highlights.length > 0 && (
+                    <nav aria-label={text.digestTocTitle}>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-400">
+                        {text.digestTocTitle}
+                        <span className="ml-1.5 font-normal normal-case tracking-normal text-gray-300">{highlights.length}</span>
+                      </p>
+                      <ol className="space-y-0.5">
+                        {highlights.map((h, i) => (
+                          <li key={h.article_id}>
+                            <a
+                              href={`#${paperAnchorId(h.article_id)}`}
+                              onClick={(e) => {
+                                if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+                                e.preventDefault()
+                                jumpToPaper(h.article_id)
+                              }}
+                              className="flex gap-2 rounded-md px-2 py-1.5 text-[13px] leading-snug text-gray-600 transition-colors hover:bg-white hover:text-gray-900"
+                            >
+                              <span className="w-4 flex-shrink-0 text-right text-gray-300">{i + 1}</span>
+                              <span className="line-clamp-2">{articleTitle(h.article)}</span>
+                            </a>
+                          </li>
+                        ))}
+                      </ol>
+                    </nav>
                   )}
                 </div>
+              </aside>
 
-                {activeGenerating && (
-                  <p className="mt-3 text-sm text-gray-500">{text.digestInterestGeneratingWeek}</p>
-                )}
-                {!activeGenerating && activeFailedThisWeek && activeInterest && (
-                  <p className="mt-3 text-sm text-red-600">
-                    {text.digestInterestWeekFailed}
-                    <button
-                      type="button"
-                      onClick={() => retryThisWeek(activeInterest)}
-                      className="ml-2 font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900"
-                    >
-                      {text.digestInterestRetry}
-                    </button>
-                  </p>
-                )}
+              <div className="min-w-0">
+                <div className="lg:hidden">{periodControls}</div>
+                <h2 className="mt-4 text-3xl lg:mt-0 font-bold tracking-tight text-gray-900 sm:text-4xl">
+                  {formatPeriod(digest.week_start, digest.week_end, displayLanguage)}
+                </h2>
+                <p className="mt-2 text-sm text-gray-500">
+                  {(viewingLatest ? text.digestCount : text.digestCountPast)(digest.article_count || orderedArticles.length)}
+                  <span className="mx-1.5 text-gray-300">·</span>
+                  {displayLanguage === 'zh' ? 'AI 自动生成' : 'AI-generated'}
+                </p>
 
-                {interestParagraphs.length > 0 && (
-                  <div className="mt-3 space-y-4">
-                    {interestParagraphs.map((paragraph, i) => (
-                      <p key={i} className="text-[16px] leading-8 text-gray-800">
-                        {renderOverviewLinks(
-                          paragraph,
-                          resolveInterestRef,
-                          shownIsLegacy && !interestOnViewedWeek ? noCards : cardIds,
-                          jumpToPaper
-                        )}
+                    <div className="lg:hidden">{interestControls}</div>
+
+                {/* 兴趣概览 */}
+                {activeInterest && (activeEntry || activeGenerating) && (
+                  <section className="mt-6 rounded-xl border border-blue-100 bg-blue-50/50 p-5 sm:p-6">
+                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+                      <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-600">
+                        {text.digestInterestSectionTitle(activeInterest)}
+                      </h3>
+                      {activeEntry && (
+                        <div className="flex items-center gap-2">
+                          {activeEntry.digests.length > 0 && (
+                            <select
+                              value={shownWeek ?? ''}
+                              onChange={(e) => setActiveWeek(e.target.value)}
+                              aria-label={text.digestInterestWeek}
+                              className="h-8 rounded-lg border border-blue-100 bg-white px-2 text-xs text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
+                            >
+                              {activeEntry.digests.map((d, i) => (
+                                <option key={d.week_start} value={d.week_start}>{interestPeriodLabel(d.week_start, i === 0)}</option>
+                              ))}
+                            </select>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => deleteInterest(activeEntry.interest)}
+                            className="h-8 rounded-lg px-2 text-xs font-medium text-gray-400 transition-colors hover:bg-white hover:text-red-600"
+                          >
+                            {text.digestInterestDelete}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {activeGenerating && (
+                      <p className="mt-3 text-sm text-gray-500">{text.digestInterestGeneratingWeek}</p>
+                    )}
+                    {!activeGenerating && activeFailedThisWeek && activeInterest && (
+                      <p className="mt-3 text-sm text-red-600">
+                        {text.digestInterestWeekFailed}
+                        <button
+                          type="button"
+                          onClick={() => retryThisWeek(activeInterest)}
+                          className="ml-2 font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900"
+                        >
+                          {text.digestInterestRetry}
+                        </button>
                       </p>
-                    ))}
-                  </div>
-                )}
+                    )}
 
-                {shownInterestDigest && (!shownIsLegacy || !interestOnViewedWeek) && (
-                  <p className="mt-4 text-xs text-gray-400">
-                    {shownIsLegacy ? text.digestInterestArchiveNote : text.digestInterestMonthlyNote}
-                  </p>
-                )}
-              </section>
-            )}
-
-            {/* 正在看的这一期：切换期数时先淡出旧内容 */}
-            <div aria-busy={switchingWeek} className={`transition-opacity ${switchingWeek ? 'opacity-50' : ''}`}>
-              {/* 综合概览 */}
-              <section className="mt-10">
-                <div className="flex items-center justify-between gap-3">
-                  <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-                    {viewingLatest ? text.digestOverviewTitle : text.digestOverviewTitlePast}
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={toggleOverview}
-                    aria-expanded={!overviewCollapsed}
-                    aria-controls="digest-overview-body"
-                    className="-mr-2 inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                  >
-                    {overviewCollapsed ? text.digestOverviewExpand : text.digestOverviewCollapse}
-                    <svg
-                      aria-hidden="true"
-                      width="14"
-                      height="14"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      className={`transition-transform ${overviewCollapsed ? '' : 'rotate-180'}`}
-                    >
-                      <path d="m6 9 6 6 6-6" />
-                    </svg>
-                  </button>
-                </div>
-                <div id="digest-overview-body">
-                  {overviewCollapsed ? (
-                    // 收起时只露出开头两行，点一下展开
-                    <button
-                      type="button"
-                      onClick={toggleOverview}
-                      className="mt-3 block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-                    >
-                      <span className="line-clamp-2 text-[16px] leading-8 text-gray-500">
-                        {(overviewParagraphs[0] ?? '').replace(/\[([^\]]+)\]\(\d+\)/g, '$1')}
-                      </span>
-                    </button>
-                  ) : (
-                    <>
-                      <div className="mt-4 space-y-4">
-                        {overviewParagraphs.map((paragraph, i) => (
+                    {interestParagraphs.length > 0 && (
+                      <div className="mt-3 space-y-4">
+                        {interestParagraphs.map((paragraph, i) => (
                           <p key={i} className="text-[16px] leading-8 text-gray-800">
-                            {renderOverviewLinks(paragraph, resolveDigestRef, cardIds, jumpToPaper)}
+                            {renderOverviewLinks(
+                              paragraph,
+                              resolveInterestRef,
+                              shownIsLegacy && !interestOnViewedWeek ? noCards : cardIds,
+                              jumpToPaper
+                            )}
                           </p>
                         ))}
                       </div>
-                      <p className="mt-5 text-xs text-gray-400">{text.digestDisclaimer}</p>
-                    </>
-                  )}
-                </div>
-              </section>
+                    )}
 
-              {/* 分隔 */}
-              <hr className="my-10 border-gray-200" />
+                    {shownInterestDigest && (!shownIsLegacy || !interestOnViewedWeek) && (
+                      <p className="mt-4 text-xs text-gray-400">
+                        {shownIsLegacy ? text.digestInterestArchiveNote : text.digestInterestMonthlyNote}
+                      </p>
+                    )}
+                  </section>
+                )}
 
-              {/* 本期内容 */}
-              <section>
-                <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
-                  {viewingLatest ? text.digestHighlightsTitle : text.digestHighlightsTitlePast}
-                  <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
-                    {digest.article_count || highlights.length}
-                  </span>
-                </h3>
-
-                {highlights.length === 0 ? (
-                  <p className="mt-4 rounded-xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-400">
-                    {text.digestEmpty}
-                  </p>
-                ) : (
-                  <div className="mt-4 space-y-3">
-                    {highlights.map((h) => {
-                      const title = articleTitle(h.article)
-                      const date = articleDate(h.article)
-                      const result = displayLanguage === 'zh' ? h.result_zh : (h.result_en || h.result_zh)
-                      const core = displayLanguage === 'zh' ? h.core_zh : (h.core_en || h.core_zh)
-                      const saved = bookmarks.has(h.article_id)
-                      return (
-                        <article
-                          key={h.article_id}
-                          id={paperAnchorId(h.article_id)}
-                          tabIndex={-1}
-                          className={`scroll-mt-24 rounded-xl border p-5 transition-all duration-500 focus:outline-none ${
-                            flashId === h.article_id
-                              ? 'border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200'
-                              : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
-                          }`}
+                {/* 正在看的这一期：切换期数时先淡出旧内容 */}
+                <div aria-busy={switchingWeek} className={`transition-opacity ${switchingWeek ? 'opacity-50' : ''}`}>
+                  {/* 综合概览 */}
+                  <section className="mt-10">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
+                        {viewingLatest ? text.digestOverviewTitle : text.digestOverviewTitlePast}
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={toggleOverview}
+                        aria-expanded={!overviewCollapsed}
+                        aria-controls="digest-overview-body"
+                        className="-mr-2 inline-flex h-8 items-center gap-1 rounded-lg px-2 text-xs font-medium text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                      >
+                        {overviewCollapsed ? text.digestOverviewExpand : text.digestOverviewCollapse}
+                        <svg
+                          aria-hidden="true"
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          className={`transition-transform ${overviewCollapsed ? '' : 'rotate-180'}`}
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            {h.article?.source_url ? (
-                              <a
-                                href={h.article.source_url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[15px] font-semibold leading-snug text-blue-700 underline decoration-blue-300/70 underline-offset-[3px] transition-colors hover:text-blue-900 hover:decoration-blue-500"
-                              >
-                                {title}
-                              </a>
-                            ) : (
-                              <span className="text-[15px] font-semibold leading-snug text-gray-900">{title}</span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => toggleBookmark(h.article_id)}
-                              aria-pressed={saved}
-                              aria-label={saved ? text.removeBookmark : text.addBookmark}
-                              title={saved ? text.removeBookmark : text.addBookmark}
-                              className={`-mr-1 -mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                                saved
-                                  ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600'
-                                  : 'text-gray-300 hover:bg-gray-50 hover:text-gray-500'
+                          <path d="m6 9 6 6 6-6" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div id="digest-overview-body">
+                      {overviewCollapsed ? (
+                        // 收起时只露出开头两行，点一下展开
+                        <button
+                          type="button"
+                          onClick={toggleOverview}
+                          className="mt-3 block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        >
+                          <span className="line-clamp-2 text-[16px] leading-8 text-gray-500">
+                            {(overviewParagraphs[0] ?? '').replace(/\[([^\]]+)\]\(\d+\)/g, '$1')}
+                          </span>
+                        </button>
+                      ) : (
+                        <>
+                          <div className="mt-4 space-y-4">
+                            {overviewParagraphs.map((paragraph, i) => (
+                              <p key={i} className="text-[16px] leading-8 text-gray-800">
+                                {renderOverviewLinks(paragraph, resolveDigestRef, cardIds, jumpToPaper)}
+                              </p>
+                            ))}
+                          </div>
+                          <p className="mt-5 text-xs text-gray-400">{text.digestDisclaimer}</p>
+                        </>
+                      )}
+                    </div>
+                  </section>
+
+                  {/* 分隔 */}
+                  <hr className="my-10 border-gray-200" />
+
+                  {/* 本期内容 */}
+                  <section>
+                    <h3 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+                      {viewingLatest ? text.digestHighlightsTitle : text.digestHighlightsTitlePast}
+                      <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-500">
+                        {digest.article_count || highlights.length}
+                      </span>
+                    </h3>
+
+                    {highlights.length === 0 ? (
+                      <p className="mt-4 rounded-xl border border-gray-200 bg-white px-5 py-10 text-center text-sm text-gray-400">
+                        {text.digestEmpty}
+                      </p>
+                    ) : (
+                      <div className="mt-4 space-y-3">
+                        {highlights.map((h) => {
+                          const title = articleTitle(h.article)
+                          const date = articleDate(h.article)
+                          const result = displayLanguage === 'zh' ? h.result_zh : (h.result_en || h.result_zh)
+                          const core = displayLanguage === 'zh' ? h.core_zh : (h.core_en || h.core_zh)
+                          const saved = bookmarks.has(h.article_id)
+                          return (
+                            <article
+                              key={h.article_id}
+                              id={paperAnchorId(h.article_id)}
+                              tabIndex={-1}
+                              className={`scroll-mt-24 rounded-xl border p-5 transition-all duration-500 focus:outline-none ${
+                                flashId === h.article_id
+                                  ? 'border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200'
+                                  : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
                               }`}
                             >
-                              <svg
-                                aria-hidden="true"
-                                width="16"
-                                height="16"
-                                viewBox="0 0 24 24"
-                                fill={saved ? 'currentColor' : 'none'}
-                                stroke="currentColor"
-                                strokeWidth="2"
-                              >
-                                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-                              </svg>
-                            </button>
-                          </div>
-                          <p className="mt-1 text-xs text-gray-400">
-                            {h.article?.source_name}
-                            {date ? ` · ${date}` : ''}
-                          </p>
-                          <div className="mt-3 space-y-2">
-                            {result && (
-                              <p className="text-sm leading-relaxed text-gray-700">
-                                <span className="mr-1.5 inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
-                                  {text.digestResult}
-                                </span>
-                                {result}
+                              <div className="flex items-start justify-between gap-3">
+                                {h.article?.source_url ? (
+                                  <a
+                                    href={h.article.source_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[15px] font-semibold leading-snug text-blue-700 underline decoration-blue-300/70 underline-offset-[3px] transition-colors hover:text-blue-900 hover:decoration-blue-500"
+                                  >
+                                    {title}
+                                  </a>
+                                ) : (
+                                  <span className="text-[15px] font-semibold leading-snug text-gray-900">{title}</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => toggleBookmark(h.article_id)}
+                                  aria-pressed={saved}
+                                  aria-label={saved ? text.removeBookmark : text.addBookmark}
+                                  title={saved ? text.removeBookmark : text.addBookmark}
+                                  className={`-mr-1 -mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                    saved
+                                      ? 'text-amber-500 hover:bg-amber-50 hover:text-amber-600'
+                                      : 'text-gray-300 hover:bg-gray-50 hover:text-gray-500'
+                                  }`}
+                                >
+                                  <svg
+                                    aria-hidden="true"
+                                    width="16"
+                                    height="16"
+                                    viewBox="0 0 24 24"
+                                    fill={saved ? 'currentColor' : 'none'}
+                                    stroke="currentColor"
+                                    strokeWidth="2"
+                                  >
+                                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+                                  </svg>
+                                </button>
+                              </div>
+                              <p className="mt-1 text-xs text-gray-400">
+                                {h.article?.source_name}
+                                {date ? ` · ${date}` : ''}
                               </p>
-                            )}
-                            {core && (
-                              <p className="text-sm leading-relaxed text-gray-700">
-                                <span className="mr-1.5 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
-                                  {text.digestCore}
-                                </span>
-                                {core}
-                              </p>
-                            )}
-                          </div>
-                        </article>
-                      )
-                    })}
-                  </div>
-                )}
-              </section>
+                              <div className="mt-3 space-y-2">
+                                {result && (
+                                  <p className="text-sm leading-relaxed text-gray-700">
+                                    <span className="mr-1.5 inline-flex items-center rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">
+                                      {text.digestResult}
+                                    </span>
+                                    {result}
+                                  </p>
+                                )}
+                                {core && (
+                                  <p className="text-sm leading-relaxed text-gray-700">
+                                    <span className="mr-1.5 inline-flex items-center rounded bg-gray-100 px-1.5 py-0.5 text-xs font-medium text-gray-600">
+                                      {text.digestCore}
+                                    </span>
+                                    {core}
+                                  </p>
+                                )}
+                              </div>
+                            </article>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </section>
+                </div>
+              </div>
             </div>
           </>
         )}

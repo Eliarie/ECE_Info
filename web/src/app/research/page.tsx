@@ -12,13 +12,20 @@ import {
   type ResearchSearchResult,
   type ResearchTopicData,
 } from '@/lib/research'
-import { MAX_RESEARCH_TOPICS, useResearchTopics } from '@/lib/useResearchTopics'
+import { MAX_RESEARCH_TOPICS, useResearchTopics, type ResearchEntry } from '@/lib/useResearchTopics'
+import { useBookmarks } from '@/lib/useBookmarks'
+import { UI_TEXT } from '@/lib/i18n'
+import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from '@/components/NavIconButton'
+import SyncDeviceDialog from '@/components/SyncDeviceDialog'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
 // GitHub Pages 备用站是静态导出，没有 /api，只能看已保存的专题
 const isStaticSite = Boolean(process.env.NEXT_PUBLIC_BASE_PATH)
+
+// 专题研究页只有中文界面，导航沿用站点的中文文案
+const text = UI_TEXT.zh
 
 const SCREEN_BATCH = 15
 const SCREEN_CONCURRENCY = 4
@@ -181,6 +188,8 @@ function PaperCard({
 
 export default function ResearchPage() {
   const { entries, loaded, saveTopic, removeTopic } = useResearchTopics(supabase)
+  const { bookmarks, getSyncLink } = useBookmarks(supabase)
+  const [syncLink, setSyncLink] = useState<string | null>(null)
   const [input, setInput] = useState('')
   const [current, setCurrent] = useState<ResearchTopicData | null>(null)
   const currentRef = useRef<ResearchTopicData | null>(null)
@@ -397,6 +406,21 @@ export default function ResearchPage() {
     setNotice('')
   }, [openTopic, updateCurrent])
 
+  const openEntry = useCallback((entry: ResearchEntry) => {
+    runIdRef.current++
+    setPhase('idle')
+    setError('')
+    setNotice('')
+    setShowLow(false)
+    setExpanded(new Set())
+    updateCurrent(entry.data)
+    openTopic(entry.topic)
+    window.scrollTo({ top: 0 })
+    if (!isStaticSite && entry.data.papers.some((p) => p.relevance === undefined)) {
+      void screenPapers(entry.topic, ++runIdRef.current)
+    }
+  }, [openTopic, screenPapers, updateCurrent])
+
   const papersByKey = useMemo(() => new Map((current?.papers ?? []).map((p) => [p.key, p])), [current])
   const groups = useMemo(() => {
     const papers = current?.papers ?? []
@@ -421,315 +445,377 @@ export default function ResearchPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex min-h-14 max-w-3xl items-center gap-3 px-4 py-2 sm:min-h-16">
-          <Link href="/" className="text-sm text-gray-500 transition-colors hover:text-gray-900">
-            ← 首页
-          </Link>
-          <h1 className="min-w-0 flex-1 truncate text-base font-semibold tracking-tight text-gray-900 sm:text-lg">
-            专题研究
-          </h1>
+      <nav className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur" aria-label={text.mainNavigation}>
+        <div className="mx-auto flex min-h-14 max-w-6xl items-center gap-3 px-4 py-2 sm:min-h-16 lg:px-8">
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-semibold tracking-tight text-gray-900 sm:text-lg">
+              <Link href="/" title={text.navHomeTip}>{text.brand}</Link>
+              <span className="ml-2 font-normal text-gray-400">/ 专题研究</span>
+            </h1>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
+            <NavIconButton label={text.navResearchTip} href="/research" icon={<ResearchIcon />} active />
+            <NavIconButton label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
+            <NavIconButton
+              label={text.navFavoritesTip(bookmarks.size)}
+              href="/browse/?favorites=1"
+              icon={<BookmarkIcon filled={bookmarks.size > 0} />}
+              badge={bookmarks.size}
+            />
+            <NavIconButton
+              label={text.navSyncTip}
+              onClick={() => setSyncLink(getSyncLink())}
+              icon={<SyncIcon />}
+              tooltipAlign="right"
+            />
+          </div>
         </div>
       </nav>
 
-      <main className="mx-auto max-w-2xl px-4 py-6 sm:py-10">
-        {isStaticSite && (
-          <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
-            备用站不能检索新专题，只能看已保存的。要搜新主题请到主站{' '}
-            <a href="https://ecepaper.siyan.me/research/" className="font-medium underline">ecepaper.siyan.me</a>。
-          </div>
-        )}
+      {syncLink && <SyncDeviceDialog link={syncLink} language="zh" onClose={() => setSyncLink(null)} />}
 
-        {!current && (
-          <>
-            <p className="text-sm leading-relaxed text-gray-600">
-              输入一个想研究的主题，会去学术数据库里找这个主题下已发表的研究，翻译、筛选后列出来，还可以生成一份简短的研究综述。
-            </p>
-            {!isStaticSite && (
-              <form
-                className="mt-4 flex gap-2"
-                onSubmit={(e) => {
-                  e.preventDefault()
-                  void runSearch(input)
-                }}
-              >
-                <input
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  placeholder="例如：游戏中的同伴冲突"
-                  maxLength={80}
-                  disabled={busy}
-                  className="h-11 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-[15px] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
-                />
+      <main className="mx-auto max-w-2xl px-4 py-6 sm:py-10 lg:max-w-6xl lg:px-8">
+        <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
+          {/* 大屏左栏：我的专题，随时切换 */}
+          <aside className="hidden lg:block">
+            <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pb-6 pr-1">
+              {!isStaticSite && (
                 <button
-                  type="submit"
-                  disabled={busy || !normalizeTopic(input)}
-                  className="h-11 flex-shrink-0 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-gray-300"
+                  type="button"
+                  onClick={backToList}
+                  className={`flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-sm font-medium transition-colors ${
+                    current
+                      ? 'border border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:text-gray-900'
+                      : 'border border-blue-200 bg-blue-50 text-blue-700'
+                  }`}
                 >
-                  {phase === 'searching' ? '检索中…' : '检索'}
+                  <span aria-hidden="true">＋</span> 新专题
                 </button>
-              </form>
-            )}
-            {!isStaticSite && !busy && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {EXAMPLES.map((example) => (
-                  <button
-                    key={example}
-                    type="button"
-                    onClick={() => setInput(example)}
-                    className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:border-gray-400"
-                  >
-                    {example}
-                  </button>
-                ))}
+              )}
+              <p className="mb-2 mt-6 text-xs font-semibold uppercase tracking-widest text-gray-400">
+                我的专题
+                {entries.length > 0 && <span className="ml-1.5 font-normal normal-case tracking-normal text-gray-300">{entries.length}</span>}
+              </p>
+              {entries.length === 0 ? (
+                <p className="px-2 text-xs leading-relaxed text-gray-400">{loaded ? '搜过的专题会保存在这里，多设备同步。' : '加载中…'}</p>
+              ) : (
+                <ul className="space-y-0.5">
+                  {entries.map((entry) => {
+                    const active = current?.topic === entry.topic
+                    return (
+                      <li key={entry.topic}>
+                        <button
+                          type="button"
+                          onClick={() => openEntry(entry)}
+                          disabled={busy && !active}
+                          aria-current={active ? 'page' : undefined}
+                          className={`block w-full rounded-md px-2 py-1.5 text-left transition-colors disabled:opacity-50 ${
+                            active ? 'bg-white text-gray-900 shadow-sm ring-1 ring-gray-200' : 'text-gray-600 hover:bg-white hover:text-gray-900'
+                          }`}
+                        >
+                          <span className="block truncate text-[13px] font-medium">{entry.topic}</span>
+                          <span className="mt-0.5 block text-[11px] text-gray-400">
+                            {entry.data.papers.length} 篇{entry.data.review ? ' · 有综述' : ''}
+                          </span>
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          </aside>
+
+          <div className="min-w-0">
+            {isStaticSite && (
+              <div className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm leading-relaxed text-amber-900">
+                备用站不能检索新专题，只能看已保存的。要搜新主题请到主站{' '}
+                <a href="https://ecepaper.siyan.me/research/" className="font-medium underline">ecepaper.siyan.me</a>。
               </div>
             )}
-            <p className="mt-3 text-xs leading-relaxed text-gray-400">
-              可以写时间范围，如「近10年」「2015年以来」。主要检索英文文献（OpenAlex），中文期刊收录较少。
-            </p>
-          </>
-        )}
 
-        {error && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
-        )}
+            {!current && (
+              <>
+                <p className="text-sm leading-relaxed text-gray-600">
+                  输入一个想研究的主题，会去学术数据库里找这个主题下已发表的研究，翻译、筛选后列出来，还可以生成一份简短的研究综述。
+                </p>
+                {!isStaticSite && (
+                  <form
+                    className="mt-4 flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      void runSearch(input)
+                    }}
+                  >
+                    <input
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      placeholder="例如：游戏中的同伴冲突"
+                      maxLength={80}
+                      disabled={busy}
+                      className="h-11 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-[15px] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-gray-100"
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy || !normalizeTopic(input)}
+                      className="h-11 flex-shrink-0 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-gray-300"
+                    >
+                      {phase === 'searching' ? '检索中…' : '检索'}
+                    </button>
+                  </form>
+                )}
+                {!isStaticSite && !busy && (
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {EXAMPLES.map((example) => (
+                      <button
+                        key={example}
+                        type="button"
+                        onClick={() => setInput(example)}
+                        className="rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-600 hover:border-gray-400"
+                      >
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p className="mt-3 text-xs leading-relaxed text-gray-400">
+                  可以写时间范围，如「近10年」「2015年以来」。主要检索英文文献（OpenAlex），中文期刊收录较少。
+                </p>
+              </>
+            )}
 
-        {notice && (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>
-        )}
+            {error && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>
+            )}
 
-        {phase === 'searching' && !current && (
-          <div className="py-16 text-center text-sm text-gray-500">正在拟定检索式、检索文献…（大约 10 秒）</div>
-        )}
+            {notice && (
+              <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{notice}</div>
+            )}
 
-        {!current && !busy && (
-          <section className="mt-8">
-            <h2 className="text-sm font-semibold text-gray-900">我的专题</h2>
-            {!loaded ? (
-              <p className="mt-3 text-sm text-gray-400">加载中…</p>
-            ) : entries.length === 0 ? (
-              <p className="mt-3 text-sm text-gray-400">还没有专题。搜过的专题会保存在这里，多设备同步。</p>
-            ) : (
-              <ul className="mt-3 space-y-2">
-                {entries.map((entry) => (
-                  <li key={entry.topic}>
+            {phase === 'searching' && !current && (
+              <div className="py-16 text-center text-sm text-gray-500">正在拟定检索式、检索文献…（大约 10 秒）</div>
+            )}
+
+            {!current && !busy && (
+              <section className="mt-8 lg:hidden">
+                <h2 className="text-sm font-semibold text-gray-900">我的专题</h2>
+                {!loaded ? (
+                  <p className="mt-3 text-sm text-gray-400">加载中…</p>
+                ) : entries.length === 0 ? (
+                  <p className="mt-3 text-sm text-gray-400">还没有专题。搜过的专题会保存在这里，多设备同步。</p>
+                ) : (
+                  <ul className="mt-3 space-y-2">
+                    {entries.map((entry) => (
+                      <li key={entry.topic}>
+                        <button
+                          type="button"
+                          onClick={() => openEntry(entry)}
+                          className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors hover:border-gray-300"
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[15px] font-medium text-gray-900">{entry.topic}</span>
+                            <span className="mt-0.5 block text-xs text-gray-500">
+                              {entry.data.papers.length} 篇{entry.data.review ? ' · 有综述' : ''} · {formatDate(entry.data.searched_at)}
+                            </span>
+                          </span>
+                          <span className="text-gray-300">›</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {current && (
+              <>
+                <button type="button" onClick={backToList} className="mb-3 text-sm text-gray-500 hover:text-gray-900 lg:hidden">
+                  ← 全部专题
+                </button>
+                <h2 className="text-xl font-semibold leading-snug text-gray-900">{current.topic}</h2>
+                <p className="mt-2 text-xs leading-relaxed text-gray-500">
+                  {current.papers.length} 篇 · {yearRange(current)} · 来源 {current.source === 'openalex' ? 'OpenAlex' : 'Crossref'} · 检索于{' '}
+                  {formatDate(current.searched_at)}
+                </p>
+                <details className="mt-1 text-xs text-gray-500">
+                  <summary className="cursor-pointer select-none">检索式</summary>
+                  <ul className="mt-1 space-y-1 break-words font-mono text-[11px] text-gray-500">
+                    {current.queries.map((q) => (
+                      <li key={q}>{q}</li>
+                    ))}
+                  </ul>
+                </details>
+                {!isStaticSite && (
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        setError('')
-                        setNotice('')
-                        setShowLow(false)
-                        setExpanded(new Set())
-                        updateCurrent(entry.data)
-                        openTopic(entry.topic)
-                        if (!isStaticSite && entry.data.papers.some((p) => p.relevance === undefined)) {
-                          void screenPapers(entry.topic, ++runIdRef.current)
-                        }
-                      }}
-                      className="flex w-full items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-3 text-left transition-colors hover:border-gray-300"
+                      disabled={busy}
+                      onClick={() => void runSearch(current.topic)}
+                      className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 hover:border-gray-300 disabled:opacity-50"
                     >
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[15px] font-medium text-gray-900">{entry.topic}</span>
-                        <span className="mt-0.5 block text-xs text-gray-500">
-                          {entry.data.papers.length} 篇{entry.data.review ? ' · 有综述' : ''} · {formatDate(entry.data.searched_at)}
-                        </span>
-                      </span>
-                      <span className="text-gray-300">›</span>
+                      {phase === 'searching' ? '检查中…' : '检查新发表'}
                     </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-
-        {current && (
-          <>
-            <button type="button" onClick={backToList} className="text-sm text-gray-500 hover:text-gray-900">
-              ← 全部专题
-            </button>
-            <h2 className="mt-3 text-xl font-semibold leading-snug text-gray-900">{current.topic}</h2>
-            <p className="mt-2 text-xs leading-relaxed text-gray-500">
-              {current.papers.length} 篇 · {yearRange(current)} · 来源 {current.source === 'openalex' ? 'OpenAlex' : 'Crossref'} · 检索于{' '}
-              {formatDate(current.searched_at)}
-            </p>
-            <details className="mt-1 text-xs text-gray-500">
-              <summary className="cursor-pointer select-none">检索式</summary>
-              <ul className="mt-1 space-y-1 break-words font-mono text-[11px] text-gray-500">
-                {current.queries.map((q) => (
-                  <li key={q}>{q}</li>
-                ))}
-              </ul>
-            </details>
-            {!isStaticSite && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void runSearch(current.topic)}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 hover:border-gray-300 disabled:opacity-50"
-                >
-                  {phase === 'searching' ? '检查中…' : '检查新发表'}
-                </button>
-                {unscreened > 0 && phase !== 'screening' && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={rescreen}
-                    className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 hover:border-gray-300 disabled:opacity-50"
-                  >
-                    补全翻译（{unscreened}）
-                  </button>
+                    {unscreened > 0 && phase !== 'screening' && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={rescreen}
+                        className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 hover:border-gray-300 disabled:opacity-50"
+                      >
+                        补全翻译（{unscreened}）
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={deleteCurrent}
+                      className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-red-600 hover:border-red-200 disabled:opacity-50"
+                    >
+                      删除
+                    </button>
+                  </div>
                 )}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={deleteCurrent}
-                  className="h-8 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-red-600 hover:border-red-200 disabled:opacity-50"
-                >
-                  删除
-                </button>
-              </div>
-            )}
 
-            {/* 综述 */}
-            <section className="mt-6 rounded-xl border border-blue-100 bg-white p-5">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-gray-900">研究综述</h3>
-                {review && !isStaticSite && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => void generateReview()}
-                    className="text-xs font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50"
-                  >
-                    {phase === 'reviewing' ? '生成中…' : '重新生成'}
-                  </button>
-                )}
-              </div>
-              {review ? (
-                <div className="mt-3 space-y-4 text-[15px] leading-relaxed text-gray-800">
-                  {review.overview && <p>{renderRefs(review.overview, papersByKey, jumpToPaper)}</p>}
-                  {review.themes.map((theme, i) => (
-                    <div key={`${i}-${theme.title}`}>
-                      <h4 className="font-semibold text-gray-900">
-                        {i + 1}. {theme.title}
-                      </h4>
-                      <p className="mt-1">{renderRefs(theme.body, papersByKey, jumpToPaper)}</p>
+                {/* 综述 */}
+                <section className="mt-6 rounded-xl border border-blue-100 bg-white p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-gray-900">研究综述</h3>
+                    {review && !isStaticSite && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void generateReview()}
+                        className="text-xs font-medium text-gray-500 hover:text-gray-900 disabled:opacity-50"
+                      >
+                        {phase === 'reviewing' ? '生成中…' : '重新生成'}
+                      </button>
+                    )}
+                  </div>
+                  {review ? (
+                    <div className="mt-3 space-y-4 text-[15px] leading-relaxed text-gray-800">
+                      {review.overview && <p>{renderRefs(review.overview, papersByKey, jumpToPaper)}</p>}
+                      {review.themes.map((theme, i) => (
+                        <div key={`${i}-${theme.title}`}>
+                          <h4 className="font-semibold text-gray-900">
+                            {i + 1}. {theme.title}
+                          </h4>
+                          <p className="mt-1">{renderRefs(theme.body, papersByKey, jumpToPaper)}</p>
+                        </div>
+                      ))}
+                      {review.gaps && (
+                        <div>
+                          <h4 className="font-semibold text-gray-900">还没回答好的问题</h4>
+                          <p className="mt-1">{renderRefs(review.gaps, papersByKey, jumpToPaper)}</p>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-400">
+                        基于 {review.paper_count} 篇相关文章生成于 {formatDate(review.created_at)}，由模型根据标题和摘要归纳，引用前请看原文核实。
+                      </p>
                     </div>
-                  ))}
-                  {review.gaps && (
-                    <div>
-                      <h4 className="font-semibold text-gray-900">还没回答好的问题</h4>
-                      <p className="mt-1">{renderRefs(review.gaps, papersByKey, jumpToPaper)}</p>
+                  ) : phase === 'reviewing' ? (
+                    <p className="mt-3 text-sm text-gray-500">正在通读这些文章、归纳研究方向…（大约 15 秒）</p>
+                  ) : isStaticSite ? (
+                    <p className="mt-3 text-sm text-gray-500">这个专题还没有综述。</p>
+                  ) : (
+                    <div className="mt-3">
+                      <p className="text-sm leading-relaxed text-gray-600">
+                        把下面相关的文章（最多 {REVIEW_MAX_PAPERS} 篇）归纳成几个研究方向，说明各自的发现和还没解决的问题。
+                      </p>
+                      <button
+                        type="button"
+                        disabled={busy || current.papers.length === 0}
+                        onClick={() => void generateReview()}
+                        className="mt-3 h-9 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-gray-300"
+                      >
+                        {phase === 'screening' ? '等筛选完成…' : '生成综述'}
+                      </button>
                     </div>
                   )}
-                  <p className="text-xs text-gray-400">
-                    基于 {review.paper_count} 篇相关文章生成于 {formatDate(review.created_at)}，由模型根据标题和摘要归纳，引用前请看原文核实。
-                  </p>
-                </div>
-              ) : phase === 'reviewing' ? (
-                <p className="mt-3 text-sm text-gray-500">正在通读这些文章、归纳研究方向…（大约 15 秒）</p>
-              ) : isStaticSite ? (
-                <p className="mt-3 text-sm text-gray-500">这个专题还没有综述。</p>
-              ) : (
-                <div className="mt-3">
-                  <p className="text-sm leading-relaxed text-gray-600">
-                    把下面相关的文章（最多 {REVIEW_MAX_PAPERS} 篇）归纳成几个研究方向，说明各自的发现和还没解决的问题。
-                  </p>
-                  <button
-                    type="button"
-                    disabled={busy || current.papers.length === 0}
-                    onClick={() => void generateReview()}
-                    className="mt-3 h-9 rounded-lg bg-blue-600 px-4 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:bg-gray-300"
-                  >
-                    {phase === 'screening' ? '等筛选完成…' : '生成综述'}
-                  </button>
-                </div>
-              )}
-            </section>
+                </section>
 
-            {/* 文章清单 */}
-            <section className="mt-8">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold text-gray-900">相关文章（{groups.main.length}）</h3>
-                <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
-                  {([
-                    ['relevance', '相关度'],
-                    ['newest', '最新'],
-                    ['cited', '被引最多'],
-                  ] as const).map(([mode, label]) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setSortMode(mode)}
-                      className={`rounded-md px-2.5 py-1 ${sortMode === mode ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900'}`}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {phase === 'screening' && (
-                <p className="mt-2 text-xs text-gray-500">
-                  正在翻译标题、判断相关度… {progress.done}/{progress.total}
-                </p>
-              )}
-              {current.papers.length === 0 && (
-                <p className="mt-4 text-sm text-gray-500">没有检索到文章。换个说法或放宽时间范围再试试。</p>
-              )}
-              <div className="mt-3 space-y-3">
-                {groups.main.map((paper) => (
-                  <PaperCard
-                    key={paper.key}
-                    paper={paper}
-                    highlighted={highlighted === paper.key}
-                    expanded={expanded.has(paper.key)}
-                    onToggleAbstract={() =>
-                      setExpanded((prev) => {
-                        const next = new Set(prev)
-                        if (next.has(paper.key)) next.delete(paper.key)
-                        else next.add(paper.key)
-                        return next
-                      })
-                    }
-                  />
-                ))}
-              </div>
-              {groups.low.length > 0 && (
-                <div className="mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowLow((v) => !v)}
-                    className="text-sm font-medium text-gray-500 hover:text-gray-900"
-                  >
-                    {showLow ? '收起' : '展开'}可能不太相关的文章（{groups.low.length}）
-                  </button>
-                  {showLow && (
-                    <div className="mt-3 space-y-3 opacity-80">
-                      {groups.low.map((paper) => (
-                        <PaperCard
-                          key={paper.key}
-                          paper={paper}
-                          highlighted={highlighted === paper.key}
-                          expanded={expanded.has(paper.key)}
-                          onToggleAbstract={() =>
-                            setExpanded((prev) => {
-                              const next = new Set(prev)
-                              if (next.has(paper.key)) next.delete(paper.key)
-                              else next.add(paper.key)
-                              return next
-                            })
-                          }
-                        />
+                {/* 文章清单 */}
+                <section className="mt-8">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-gray-900">相关文章（{groups.main.length}）</h3>
+                    <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 text-xs">
+                      {([
+                        ['relevance', '相关度'],
+                        ['newest', '最新'],
+                        ['cited', '被引最多'],
+                      ] as const).map(([mode, label]) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          onClick={() => setSortMode(mode)}
+                          className={`rounded-md px-2.5 py-1 ${sortMode === mode ? 'bg-gray-900 text-white' : 'text-gray-500 hover:text-gray-900'}`}
+                        >
+                          {label}
+                        </button>
                       ))}
                     </div>
+                  </div>
+                  {phase === 'screening' && (
+                    <p className="mt-2 text-xs text-gray-500">
+                      正在翻译标题、判断相关度… {progress.done}/{progress.total}
+                    </p>
                   )}
-                </div>
-              )}
-            </section>
-          </>
-        )}
+                  {current.papers.length === 0 && (
+                    <p className="mt-4 text-sm text-gray-500">没有检索到文章。换个说法或放宽时间范围再试试。</p>
+                  )}
+                  <div className="mt-3 space-y-3">
+                    {groups.main.map((paper) => (
+                      <PaperCard
+                        key={paper.key}
+                        paper={paper}
+                        highlighted={highlighted === paper.key}
+                        expanded={expanded.has(paper.key)}
+                        onToggleAbstract={() =>
+                          setExpanded((prev) => {
+                            const next = new Set(prev)
+                            if (next.has(paper.key)) next.delete(paper.key)
+                            else next.add(paper.key)
+                            return next
+                          })
+                        }
+                      />
+                    ))}
+                  </div>
+                  {groups.low.length > 0 && (
+                    <div className="mt-6">
+                      <button
+                        type="button"
+                        onClick={() => setShowLow((v) => !v)}
+                        className="text-sm font-medium text-gray-500 hover:text-gray-900"
+                      >
+                        {showLow ? '收起' : '展开'}可能不太相关的文章（{groups.low.length}）
+                      </button>
+                      {showLow && (
+                        <div className="mt-3 space-y-3 opacity-80">
+                          {groups.low.map((paper) => (
+                            <PaperCard
+                              key={paper.key}
+                              paper={paper}
+                              highlighted={highlighted === paper.key}
+                              expanded={expanded.has(paper.key)}
+                              onToggleAbstract={() =>
+                                setExpanded((prev) => {
+                                  const next = new Set(prev)
+                                  if (next.has(paper.key)) next.delete(paper.key)
+                                  else next.add(paper.key)
+                                  return next
+                                })
+                              }
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </div>
+        </div>
       </main>
     </div>
   )
