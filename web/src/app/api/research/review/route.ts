@@ -68,9 +68,16 @@ ${listing}`
           const paper = papers[Number(num) - 1]
           return paper ? `[${label}](${paper.key})` : label
         })
-    const themes = (Array.isArray(parsed.themes) ? parsed.themes : [])
-      .map((t: any) => ({ title: String(t?.title ?? '').trim(), body: toKeys(t?.body) }))
-      .filter((t: { title: string; body: string }) => t.title && t.body)
+    // 模型偶尔把两个方向起成同一个标题：同名的并成一段，正文一样的只留一份
+    const themes: { title: string; body: string }[] = []
+    for (const raw of Array.isArray(parsed.themes) ? parsed.themes : []) {
+      const title = String(raw?.title ?? '').trim()
+      const body = toKeys(raw?.body)
+      if (!title || !body) continue
+      const same = themes.find((t) => t.title === title)
+      if (!same) themes.push({ title, body })
+      else if (!same.body.includes(body)) same.body = `${same.body}${body}`
+    }
     if (!themes.length) {
       return NextResponse.json({ error: '生成失败', reason: 'empty_review' }, { status: 500 })
     }

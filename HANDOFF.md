@@ -2,7 +2,7 @@
 
 更新于 2026-11-02。
 
-## 刚完成：专题研究页（2026-11-02，已推送；还差 OpenAlex 密钥）
+## 刚完成：专题研究页（2026-11-02，已上线）
 
 用户要求：想研究某个主题时随时输入，把这个主题下已发表的研究都找出来，像写研究综述前的文献摸底。和按月的兴趣速览分开。
 - **入口**：首页最上方一行「专题研究」（手机顶栏已经放不下按钮了），页面在 `web/src/app/research/page.tsx`。
@@ -23,13 +23,18 @@
 - **云端同步已验证（2026-11-02）**：①-4 的 SQL 由 Claude 在用户已登录的 Chrome 里执行，检查结果 3 行全是 true。
   本地用两个「设备」（localhost 和 127.0.0.1）测：A 检索 → 写入云端 → B 扫码链接打开后看到同一专题（60 篇、中文标题都在）
   → B 生成综述 → A 刷新后也有综述 → A 删除 → B 刷新后消失、不会补回 → 库里该同步码为空。用公开密钥直接读表被拒（401），只能经函数访问。
-- **还没验证**：Vercel 线上（等 OpenAlex 密钥）。
+- **线上已验证（2026-11-02）**：用户在 Vercel 项目 ece-info 加了 `OPENALEX_API_KEY` 并重新部署。
+  直接调用 ecepaper.siyan.me 的接口：3 个主题各检索一次，9 条检索式全部成功（OpenAlex，每次 60 篇、49-57 篇有摘要，3-5 秒）；
+  完整走一遍检索 3 秒 → 筛选 60/60 篇 6 秒 → 综述 11 秒、22 处引用全部对得上。
+  Claude 的内置浏览器打不开线上页面的脚本（`ERR_BLOCKED_BY_CLIENT`，是浏览器那边拦的，curl 取同样文件是 200），所以线上页面交互没在浏览器里点过，页面代码和本地验证的一致。
+- 线上测试时发现模型偶尔给两个方向起同一个标题，综述接口现在把同名方向合并。测试主题别加「线上测试」之类的前缀，模型会当成主题的一部分。
+- Vercel 新版控制台：团队层级的 Environment Variables 页只能看不能加，要先在顶部「All Projects」选 ece-info，再进左栏 Environment Variables 添加。
 - 经验：dev 服务器开着时别在 `web/` 里跑 `next build`，会覆盖 `.next`，开发页面的脚本全部 404（页面能显示但点什么都没反应）。要删掉 `web/.next` 重启 dev。
 - 界面只有中文（综述本来就是中文），首页切到英文时入口文字是英文，进去仍是中文。
 
 ### 用户要做的
 1. [x] 在 Supabase SQL Editor 执行 `RUN_THIS_SQL.md` 的 ①-4（2026-11-02 执行，3 行都是 true）
-2. [ ] 到 https://openalex.org/settings/api 免费注册拿 API key，在 Vercel → Settings → Environments → Production 加 `OPENALEX_API_KEY`，然后重新部署。
+2. [x] （2026-11-02 已完成）到 https://openalex.org/settings/api 免费注册拿 API key，在 Vercel → Settings → Environments → Production 加 `OPENALEX_API_KEY`，然后重新部署。
    顺便把 `OPENALEX_EMAIL` 也加上（可选）。本地要用就写进 `web/.env.local`。
 
 ## 刚完成：「全部文章」页期刊显示「暂无」（2026-11-01）
