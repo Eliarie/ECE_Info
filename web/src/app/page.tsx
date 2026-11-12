@@ -8,22 +8,13 @@ import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from 
 import SyncDeviceDialog from '@/components/SyncDeviceDialog'
 import { UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
-import { parseInterestRange } from '@/lib/interestRange'
-import { MAX_INTERESTS, normalizeInterest, useInterestDigests } from '@/lib/useInterestDigests'
 import type { Article, DigestHighlight, DisplayLanguage, WeeklyDigest } from '@/lib/types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey)
 const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAnonKey as string) : null
-// GitHub Pages 备用站是静态导出，没有 /api/generate，不能生成兴趣速览
-const isStaticSite = Boolean(process.env.NEXT_PUBLIC_BASE_PATH)
-
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
-const ACTIVE_INTEREST_KEY = 'digest_active_interest'
-const OVERVIEW_COLLAPSED_KEY = 'digest_overview_collapsed'
-// 兴趣速览每月一份：最近这么多期周报里都没有它的存档，就该生成新的一份了（与 scripts/generate_digest.py 一致）
-const INTEREST_MONTH_WEEKS = 4
 
 type LinkableArticle = Pick<Article, 'id' | 'source_url'>
 
@@ -67,12 +58,6 @@ const OVERVIEW_LINK_CLASS =
 const paperAnchorId = (articleId: string) => `paper-${articleId}`
 
 const UUID_PATTERN = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
-const ARTICLE_REF_REGEX = new RegExp(`\\]\\((${UUID_PATTERN})\\)`, 'gi')
-
-// 兴趣速览里 [短语](文章id) 引用到的文章；旧的按周存档用的是 [短语](编号)，没有 id
-const extractArticleRefs = (text: string) =>
-  Array.from(text.matchAll(ARTICLE_REF_REGEX), (m) => m[1].toLowerCase())
-
 // 概览里的 [短语](编号) 或 [短语](文章id)：本期论文里有对应卡片就页内跳转，否则退回到原文链接
 function renderOverviewLinks(
   text: string,
@@ -134,7 +119,7 @@ type HighlightWithArticle = DigestHighlight & { article?: Article }
 
 export default function HomePage() {
   const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
-  // latestDigest：最新一期，兴趣速览总是基于它生成；digest / articles：页面上正在看的那一期
+  // latestDigest：最新一期；digest / articles：页面上正在看的那一期
   const [latestDigest, setLatestDigest] = useState<WeeklyDigest | null>(null)
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
   const [articles, setArticles] = useState<Article[]>([])
@@ -149,24 +134,11 @@ export default function HomePage() {
   const { bookmarks, toggleBookmark, getSyncLink } = useBookmarks(supabase)
   const [syncLink, setSyncLink] = useState<string | null>(null)
 
-  const { entries: interestEntries, loaded: interestsLoaded, saveDigest, removeInterest } = useInterestDigests(supabase)
-  const [interestInput, setInterestInput] = useState('')
-  const [activeInterest, setActiveInterest] = useState<string | null>(null)
-  const [activeWeek, setActiveWeek] = useState<string | null>(null) // null = 该兴趣最新一期
-  const [generatingSet, setGeneratingSet] = useState<Set<string>>(new Set())
-  const [interestError, setInterestError] = useState<'failed' | 'limit' | 'static' | null>(null)
-  const attemptedRef = useRef<Set<string>>(new Set()) // 本次打开页面已尝试生成过的「兴趣|周」
-  const [failedKeys, setFailedKeys] = useState<Set<string>>(new Set())
-  const [archiveArticles, setArchiveArticles] = useState<{ week: string; list: (LinkableArticle | undefined)[] } | null>(null)
-  const [linkedArticles, setLinkedArticles] = useState<Map<string, LinkableArticle>>(new Map())
-  const requestedRefsRef = useRef<Set<string>>(new Set())
-  const [overviewCollapsedChoice, setOverviewCollapsedChoice] = useState<boolean | null>(null) // null = 没选过，按默认
+  const [overviewCollapsed, setOverviewCollapsed] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
     if (saved === 'zh' || saved === 'en') setDisplayLanguage(saved)
-    const collapsed = localStorage.getItem(OVERVIEW_COLLAPSED_KEY)
-    if (collapsed === '1' || collapsed === '0') setOverviewCollapsedChoice(collapsed === '1')
   }, [])
 
   useEffect(() => {
@@ -241,121 +213,6 @@ export default function HomePage() {
     try { localStorage.setItem(DISPLAY_LANGUAGE_KEY, language) } catch {}
   }
 
-  const selectInterest = useCallback((interest: string) => {
-    setActiveInterest(interest)
-    setActiveWeek(null)
-    setInterestError(null)
-    try { localStorage.setItem(ACTIVE_INTEREST_KEY, interest) } catch {}
-  }, [])
-
-  // weeks 不传 = 近一个月
-  const generateFor = useCallback(async (interest: string, weeks?: number) => {
-    setGeneratingSet((prev) => new Set(prev).add(interest))
-    try {
-      const resp = await fetch('/api/generate/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(weeks ? { interest, weeks } : { interest }),
-      })
-      const data = await resp.json()
-      if (!resp.ok || data.error) throw new Error(data.error || 'failed')
-      saveDigest(interest, {
-        week_start: data.week_start,
-        overview_zh: data.overview_zh,
-        overview_en: data.overview_en || '',
-      })
-      return true
-    } catch (error) {
-      console.error('interest generate error:', error)
-      return false
-    } finally {
-      setGeneratingSet((prev) => {
-        const next = new Set(prev)
-        next.delete(interest)
-        return next
-      })
-    }
-  }, [saveDigest])
-
-  const submitInterest = async () => {
-    const parsed = parseInterestRange(normalizeInterest(interestInput))
-    const value = normalizeInterest(parsed.interest)
-    if (!value || !latestDigest) return
-    if (isStaticSite) {
-      setInterestError('static')
-      return
-    }
-    const exists = interestEntries.some((e) => e.interest === value)
-    if (!exists && interestEntries.length >= MAX_INTERESTS) {
-      setInterestError('limit')
-      return
-    }
-    selectInterest(value)
-    setInterestInput('')
-    // 已订阅又没写时间范围：切过去即可，到了该出新一月的时候下面的自动生成会补上；
-    // 写了范围（如「最近两个月 …」）就按这个范围重新生成，替换最新一份
-    if (exists && !parsed.weeks) return
-    attemptedRef.current.add(`${value}|${latestDigest.week_start}`)
-    if (!(await generateFor(value, parsed.weeks ?? undefined))) {
-      setInterestError('failed')
-      setInterestInput(interestInput)
-    }
-  }
-
-  const deleteInterest = (interest: string) => {
-    if (!window.confirm(text.digestInterestDeleteConfirm(interest))) return
-    removeInterest(interest)
-  }
-
-  // 当前选中的兴趣不存在（首次打开、被删除、生成失败）时，回到上次看的或最近添加的那个
-  useEffect(() => {
-    if (activeInterest && (interestEntries.some((e) => e.interest === activeInterest) || generatingSet.has(activeInterest))) return
-    let stored: string | null = null
-    try { stored = localStorage.getItem(ACTIVE_INTEREST_KEY) } catch {}
-    const fallback = interestEntries.find((e) => e.interest === stored) ?? interestEntries[interestEntries.length - 1]
-    setActiveInterest(fallback?.interest ?? null)
-    setActiveWeek(null)
-  }, [activeInterest, interestEntries, generatingSet])
-
-  // 最近 INTEREST_MONTH_WEEKS 期周报的 week_start；兴趣在这几期里都没有存档，说明上一份已满一个月
-  const recentWeeks = useMemo(() => {
-    if (!latestDigest) return new Set<string>()
-    const weeks = digestWeeks.includes(latestDigest.week_start) ? digestWeeks : [latestDigest.week_start, ...digestWeeks]
-    return new Set(weeks.slice(0, INTEREST_MONTH_WEEKS))
-  }, [latestDigest, digestWeeks])
-  const isDue = useCallback(
-    (entry: { digests: { week_start: string }[] } | null | undefined) =>
-      !entry || !entry.digests.some((d) => recentWeeks.has(d.week_start)),
-    [recentWeeks]
-  )
-
-  // 每个已订阅的兴趣满一个月没有新速览时自动补生成（概括近一个月）：先补正在看的，其余逐个在后台补
-  useEffect(() => {
-    if (isStaticSite || !latestDigest || !interestsLoaded || generatingSet.size > 0) return
-    const week = latestDigest.week_start
-    const stale = interestEntries.filter(
-      (e) => isDue(e) && !attemptedRef.current.has(`${e.interest}|${week}`)
-    )
-    if (stale.length === 0) return
-    const next = stale.find((e) => e.interest === activeInterest) ?? stale[0]
-    const key = `${next.interest}|${week}`
-    attemptedRef.current.add(key)
-    void generateFor(next.interest).then((ok) => {
-      if (!ok) setFailedKeys((prev) => new Set(prev).add(key))
-    })
-  }, [latestDigest, interestsLoaded, interestEntries, activeInterest, generatingSet, failedKeys, generateFor, isDue])
-
-  const retryThisWeek = (interest: string) => {
-    if (!latestDigest) return
-    const key = `${interest}|${latestDigest.week_start}`
-    attemptedRef.current.delete(key)
-    setFailedKeys((prev) => {
-      const next = new Set(prev)
-      next.delete(key)
-      return next
-    })
-  }
-
   const viewingLatest = !digest || !latestDigest || digest.week_start === latestDigest.week_start
 
   const orderedArticles = useMemo(() => {
@@ -413,113 +270,8 @@ export default function HomePage() {
 
   const overviewParagraphs = useMemo(() => toParagraphs(overview), [overview])
 
-  const activeEntry = interestEntries.find((e) => e.interest === activeInterest) ?? null
-  const shownInterestDigest = activeEntry
-    ? (activeWeek && activeEntry.digests.find((d) => d.week_start === activeWeek)) || activeEntry.digests[0] || null
-    : null
-  const shownWeek = shownInterestDigest?.week_start ?? null
-  // 兴趣速览和下方正在看的是同一期：[短语](编号) 可以页内跳到卡片；否则单独取那一期清单，链接指向原文
-  const interestOnViewedWeek = Boolean(digest && shownWeek === digest.week_start)
-  const activeGenerating = Boolean(activeInterest && generatingSet.has(activeInterest))
-  const activeMissingThisWeek = Boolean(latestDigest && activeInterest && isDue(activeEntry))
-  const activeFailedThisWeek = Boolean(
-    latestDigest && activeInterest && activeMissingThisWeek && failedKeys.has(`${activeInterest}|${latestDigest.week_start}`)
-  )
-
-  const interestParagraphs = useMemo(() => toParagraphs(
-    displayLanguage === 'zh'
-      ? shownInterestDigest?.overview_zh
-      : (shownInterestDigest?.overview_en || shownInterestDigest?.overview_zh)
-  ), [shownInterestDigest, displayLanguage])
-
-  // 按月的兴趣速览用 [短语](文章id) 引用；旧的按周存档用 [短语](编号)，编号对应那一周的清单
-  const interestRefs = useMemo(
-    () => Array.from(new Set(extractArticleRefs(`${shownInterestDigest?.overview_zh ?? ''}\n${shownInterestDigest?.overview_en ?? ''}`))),
-    [shownInterestDigest]
-  )
-  const shownIsLegacy = Boolean(shownInterestDigest && interestRefs.length === 0 && /\]\(\d+\)/.test(
-    `${shownInterestDigest.overview_zh}\n${shownInterestDigest.overview_en}`
-  ))
-
-  // 引用到的文章不在当前这一期里的，取来 id 和原文链接
-  useEffect(() => {
-    if (!supabase || interestRefs.length === 0) return
-    const onPage = new Set(articles.map((a) => a.id))
-    const missing = interestRefs.filter((id) => !onPage.has(id) && !requestedRefsRef.current.has(id))
-    if (missing.length === 0) return
-    missing.forEach((id) => requestedRefsRef.current.add(id))
-    const client = supabase
-    void (async () => {
-      const { data, error } = await client.from('articles').select('id,source_url').in('id', missing)
-      if (error) {
-        console.error('interest linked articles query error:', error)
-        missing.forEach((id) => requestedRefsRef.current.delete(id))
-        return
-      }
-      setLinkedArticles((prev) => {
-        const next = new Map(prev)
-        for (const row of (data ?? []) as LinkableArticle[]) next.set(row.id, row)
-        return next
-      })
-    })()
-  }, [interestRefs, articles])
-
-  // 旧的按周存档：[短语](编号) 对应的是那一周的论文清单，单独取来，链接指向原文
-  useEffect(() => {
-    if (!supabase || !shownWeek || !shownIsLegacy || interestOnViewedWeek || archiveArticles?.week === shownWeek) return
-    const cached = digestCacheRef.current.get(shownWeek)
-    if (cached) {
-      const byId = new Map(cached.articles.map((a) => [a.id, a]))
-      setArchiveArticles({ week: shownWeek, list: cached.digest.article_ids.map((id) => byId.get(id)) })
-      return
-    }
-    let cancelled = false
-    const loadArchive = async () => {
-      const { data, error } = await supabase
-        .from('weekly_digests')
-        .select('article_ids')
-        .eq('week_start', shownWeek)
-        .maybeSingle()
-      if (error) console.error('archive digest query error:', error)
-      const ids = ((data?.article_ids ?? []) as string[])
-      let byId = new Map<string, LinkableArticle>()
-      if (ids.length > 0) {
-        const { data: rows, error: rowsError } = await supabase.from('articles').select('id,source_url').in('id', ids)
-        if (rowsError) console.error('archive articles query error:', rowsError)
-        byId = new Map((rows ?? []).map((a) => [a.id, a]))
-      }
-      if (!cancelled) setArchiveArticles({ week: shownWeek, list: ids.map((id) => byId.get(id)) })
-    }
-    void loadArchive()
-    return () => { cancelled = true }
-  }, [shownWeek, shownIsLegacy, interestOnViewedWeek, archiveArticles?.week])
-
-  const noCards = useMemo(() => new Set<string>(), [])
-  const pageArticlesById = useMemo(() => new Map(articles.map((a) => [a.id, a])), [articles])
-  const resolveInterestRef = useMemo(() => {
-    if (shownIsLegacy) {
-      return byPosition(interestOnViewedWeek
-        ? orderedArticles
-        : (archiveArticles?.week === shownWeek ? archiveArticles.list : []))
-    }
-    return (ref: string) => pageArticlesById.get(ref) ?? linkedArticles.get(ref)
-  }, [shownIsLegacy, interestOnViewedWeek, orderedArticles, archiveArticles, shownWeek, pageArticlesById, linkedArticles])
   const resolveDigestRef = useMemo(() => byPosition(orderedArticles), [orderedArticles])
-
-  // 订阅了兴趣之后周报概览默认收起（兴趣速览更贴近需求），手动展开/收起过就记住
-  const overviewCollapsed = overviewCollapsedChoice ?? interestEntries.length > 0
-  const toggleOverview = () => {
-    const next = !overviewCollapsed
-    setOverviewCollapsedChoice(next)
-    try { localStorage.setItem(OVERVIEW_COLLAPSED_KEY, next ? '1' : '0') } catch {}
-  }
-
-  const interestPeriodLabel = (weekStart: string, isNewest: boolean) => {
-    const locale = displayLanguage === 'zh' ? 'zh-CN' : 'en-US'
-    const end = new Date(`${weekEndOf(weekStart)}T00:00:00`).toLocaleDateString(locale, { month: 'short', day: 'numeric' })
-    const label = text.digestInterestPeriod(end)
-    return isNewest ? `${text.digestLatestWeek} · ${label}` : label
-  }
+  const toggleOverview = () => setOverviewCollapsed((collapsed) => !collapsed)
 
   const weekLabel = (weekStart: string) => {
     const period = formatPeriod(weekStart, weekEndOf(weekStart), displayLanguage)
@@ -574,93 +326,6 @@ export default function HomePage() {
     </>
   )
 
-  const interestControls = digest && (
-    <>
-      <form
-        className="mt-6 flex items-center gap-2 lg:mt-0"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void submitInterest()
-        }}
-      >
-        <div className="relative flex-1">
-          <svg
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <path d="m21 21-4.3-4.3" />
-          </svg>
-          <input
-            type="text"
-            value={interestInput}
-            onChange={(e) => setInterestInput(e.target.value)}
-            maxLength={60}
-            placeholder={text.digestInterestPlaceholder}
-            aria-label={text.digestInterestPlaceholder}
-            className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-3 text-sm text-gray-800 shadow-sm placeholder:text-gray-400 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-          />
-        </div>
-        <button
-          type="submit"
-          disabled={!normalizeInterest(interestInput) || generatingSet.has(normalizeInterest(interestInput))}
-          className="flex-shrink-0 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {text.digestInterestGenerate}
-        </button>
-      </form>
-
-      {interestError && (
-        <p className="mt-3 text-sm text-red-600">
-          {interestError === 'limit'
-            ? text.digestInterestLimit(MAX_INTERESTS)
-            : interestError === 'static'
-              ? text.digestInterestStaticSite
-              : text.digestInterestError}
-        </p>
-      )}
-
-      {/* 我的兴趣：每个兴趣一个标签，点哪个看哪个 */}
-      {(interestEntries.length > 0 || activeGenerating) && (
-        <div className="mt-4 flex flex-wrap items-center gap-2" role="group" aria-label={text.digestInterestList}>
-          {[
-            ...interestEntries.map((e) => e.interest),
-            ...(activeInterest && !activeEntry && activeGenerating ? [activeInterest] : []),
-          ].map((name) => {
-            const active = name === activeInterest
-            return (
-              <button
-                key={name}
-                type="button"
-                onClick={() => selectInterest(name)}
-                aria-pressed={active}
-                className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                  active
-                    ? 'bg-blue-600 text-white'
-                    : 'border border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:text-gray-900'
-                }`}
-              >
-                {name}
-                {generatingSet.has(name) && (
-                  <span
-                    aria-hidden="true"
-                    className={`h-1.5 w-1.5 animate-pulse rounded-full ${active ? 'bg-white' : 'bg-blue-500'}`}
-                  />
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </>
-  )
-
   return (
     <div className="min-h-screen bg-gray-50">
       <nav
@@ -684,7 +349,7 @@ export default function HomePage() {
               icon={<BookmarkIcon filled={bookmarks.size > 0} />}
               badge={bookmarks.size}
             />
-            <NavIconButton label={text.navSyncTip} onClick={() => setSyncLink(getSyncLink())} icon={<SyncIcon />} />
+            <NavIconButton label={text.navSyncTip} onClick={() => setSyncLink(getSyncLink())} icon={<SyncIcon />} tooltipAlign="right" />
 
             <div
               className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5"
@@ -741,16 +406,12 @@ export default function HomePage() {
         ) : (
           <>
             <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
-              {/* 大屏左栏：期数、兴趣、本期目录，滚动时固定 */}
+              {/* 大屏左栏：期数、本期目录，滚动时固定 */}
               <aside className="hidden lg:block">
                 <div className="sticky top-24 max-h-[calc(100vh-7rem)] space-y-8 overflow-y-auto pb-6 pr-1">
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-400">{text.digestPeriodLabel}</p>
                     {periodControls}
-                  </div>
-                  <div>
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-400">{text.digestInterestsLabel}</p>
-                    {interestControls}
                   </div>
                   {highlights.length > 0 && (
                     <nav aria-label={text.digestTocTitle}>
@@ -791,79 +452,6 @@ export default function HomePage() {
                   <span className="mx-1.5 text-gray-300">·</span>
                   {displayLanguage === 'zh' ? 'AI 自动生成' : 'AI-generated'}
                 </p>
-
-                    <div className="lg:hidden">{interestControls}</div>
-
-                {/* 兴趣概览 */}
-                {activeInterest && (activeEntry || activeGenerating) && (
-                  <section className="mt-6 rounded-xl border border-blue-100 bg-blue-50/50 p-5 sm:p-6">
-                    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-                      <h3 className="text-xs font-semibold uppercase tracking-widest text-blue-600">
-                        {text.digestInterestSectionTitle(activeInterest)}
-                      </h3>
-                      {activeEntry && (
-                        <div className="flex items-center gap-2">
-                          {activeEntry.digests.length > 0 && (
-                            <select
-                              value={shownWeek ?? ''}
-                              onChange={(e) => setActiveWeek(e.target.value)}
-                              aria-label={text.digestInterestWeek}
-                              className="h-8 rounded-lg border border-blue-100 bg-white px-2 text-xs text-gray-700 focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100"
-                            >
-                              {activeEntry.digests.map((d, i) => (
-                                <option key={d.week_start} value={d.week_start}>{interestPeriodLabel(d.week_start, i === 0)}</option>
-                              ))}
-                            </select>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => deleteInterest(activeEntry.interest)}
-                            className="h-8 rounded-lg px-2 text-xs font-medium text-gray-400 transition-colors hover:bg-white hover:text-red-600"
-                          >
-                            {text.digestInterestDelete}
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
-                    {activeGenerating && (
-                      <p className="mt-3 text-sm text-gray-500">{text.digestInterestGeneratingWeek}</p>
-                    )}
-                    {!activeGenerating && activeFailedThisWeek && activeInterest && (
-                      <p className="mt-3 text-sm text-red-600">
-                        {text.digestInterestWeekFailed}
-                        <button
-                          type="button"
-                          onClick={() => retryThisWeek(activeInterest)}
-                          className="ml-2 font-medium text-blue-700 underline underline-offset-2 hover:text-blue-900"
-                        >
-                          {text.digestInterestRetry}
-                        </button>
-                      </p>
-                    )}
-
-                    {interestParagraphs.length > 0 && (
-                      <div className="mt-3 space-y-4">
-                        {interestParagraphs.map((paragraph, i) => (
-                          <p key={i} className="text-[16px] leading-8 text-gray-800">
-                            {renderOverviewLinks(
-                              paragraph,
-                              resolveInterestRef,
-                              shownIsLegacy && !interestOnViewedWeek ? noCards : cardIds,
-                              jumpToPaper
-                            )}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-
-                    {shownInterestDigest && (!shownIsLegacy || !interestOnViewedWeek) && (
-                      <p className="mt-4 text-xs text-gray-400">
-                        {shownIsLegacy ? text.digestInterestArchiveNote : text.digestInterestMonthlyNote}
-                      </p>
-                    )}
-                  </section>
-                )}
 
                 {/* 正在看的这一期：切换期数时先淡出旧内容 */}
                 <div aria-busy={switchingWeek} className={`transition-opacity ${switchingWeek ? 'opacity-50' : ''}`}>

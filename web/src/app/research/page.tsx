@@ -17,6 +17,7 @@ import { useBookmarks } from '@/lib/useBookmarks'
 import { UI_TEXT } from '@/lib/i18n'
 import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from '@/components/NavIconButton'
 import SyncDeviceDialog from '@/components/SyncDeviceDialog'
+import InterestDigestArchive from '@/components/InterestDigestArchive'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -536,6 +537,7 @@ export default function ResearchPage() {
 
             {!current && (
               <>
+                <h2 className="mb-3 text-xl font-semibold text-gray-900">想要研究的主题</h2>
                 <p className="text-sm leading-relaxed text-gray-600">
                   输入一个想研究的主题，会去学术数据库里找这个主题下已发表的研究，翻译、筛选后列出来，还可以生成一份简短的研究综述。
                 </p>
@@ -550,6 +552,7 @@ export default function ResearchPage() {
                     <input
                       value={input}
                       onChange={(e) => setInput(e.target.value)}
+                      aria-label="想要研究的主题"
                       placeholder="例如：游戏中的同伴冲突"
                       maxLength={80}
                       disabled={busy}
@@ -814,6 +817,7 @@ export default function ResearchPage() {
                 </section>
               </>
             )}
+            <InterestDigestArchive client={supabase} />
           </div>
         </div>
       </main>

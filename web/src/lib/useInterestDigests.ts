@@ -92,7 +92,7 @@ const mergeWithRemote = (local: InterestEntry[], remote: RemoteEntry[]): Interes
   return merged.sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
 
-// 首页的兴趣速览：可订阅多个兴趣，每个兴趣按周存档。
+// 专题研究页保留的兴趣速览：每个兴趣按生成期数存档。
 // 本地立即可用；与收藏共用同一个同步码，在 Supabase 上跨设备同步。
 export function useInterestDigests(client: SupabaseClient | null) {
   const [entries, setEntries] = useState<InterestEntry[]>([])
