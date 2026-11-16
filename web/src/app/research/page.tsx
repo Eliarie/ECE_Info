@@ -439,6 +439,7 @@ export default function ResearchPage() {
       <SiteHeader active="research" bookmarkCount={bookmarks.size} />
 
       <main className="mx-auto max-w-2xl px-4 py-6 sm:py-10 lg:max-w-6xl lg:px-8">
+        <h1 className="sr-only">专题研究</h1>
         <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
           {/* 大屏左栏：我的专题，随时切换 */}
           <aside className="hidden lg:block">
