@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 const BOOKMARK_DEVICE_KEY = 'bookmark_device_id'
 const BOOKMARK_STORAGE_KEY = 'bookmarks'
-// 本地数据已和哪个同步码的云端对齐过；和当前同步码不同，说明刚扫码加入了别的设备，本机原有的要并进去
+// Local cache namespace; account login selects it before these hooks mount.
 const BOOKMARK_SYNCED_DEVICE_KEY = 'bookmarks_synced_device'
 export const INTEREST_SYNCED_DEVICE_KEY = 'digest_interests_synced_device'
 export const RESEARCH_SYNCED_DEVICE_KEY = 'research_topics_synced_device'
@@ -36,12 +36,14 @@ export const markSyncedDevice = (key: string, deviceId: string) => {
   try { localStorage.setItem(key, deviceId) } catch {}
 }
 
-// 收藏在本地按设备 id 存储；带 bookmark_sync 参数打开时改用链接里的设备 id，
-// 这样另一台设备的收藏可以合并过来。
+// Keep old anonymous links compatible. Signed-in accounts always retain their
+// server-assigned namespace; account login is the only sync entry in the UI.
 export const getBookmarkDeviceId = () => {
   const params = new URLSearchParams(window.location.search)
   const sharedId = params.get('bookmark_sync')
-  if (sharedId && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sharedId)) {
+  const owner = localStorage.getItem('ece_data_owner')
+  const signedIn = Boolean(owner && owner !== 'guest')
+  if (!signedIn && sharedId && /^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(sharedId)) {
     const previousId = localStorage.getItem(BOOKMARK_DEVICE_KEY)
     if (previousId && previousId !== sharedId) {
       // 本机原来的数据属于旧同步码：记下来，收藏、兴趣和专题同步时会把它们并进新的同步组
@@ -160,14 +162,5 @@ export function useBookmarks(client: SupabaseClient | null) {
     if (deviceId) void pushChange(deviceId, id, shouldSave)
   }, [applyBookmarks, pushChange])
 
-  // 生成带同步码的链接（指向速览首页），由同步弹窗显示成二维码和可复制的链接。
-  const getSyncLink = useCallback(() => {
-    const deviceId = deviceIdRef.current ?? getBookmarkDeviceId()
-    deviceIdRef.current = deviceId
-    const url = new URL(`${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH || ''}/`)
-    url.searchParams.set('bookmark_sync', deviceId)
-    return url.toString()
-  }, [])
-
-  return { bookmarks, toggleBookmark, getSyncLink }
+  return { bookmarks, toggleBookmark }
 }

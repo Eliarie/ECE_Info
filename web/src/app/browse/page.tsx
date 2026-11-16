@@ -2,21 +2,18 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { browserClient as supabase } from '@/lib/browserClient'
 import TabBar from '@/components/TabBar'
 import ArticleCard from '@/components/ArticleCard'
 import Pagination from '@/components/Pagination'
-import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from '@/components/NavIconButton'
-import SyncDeviceDialog from '@/components/SyncDeviceDialog'
+import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon } from '@/components/NavIconButton'
+import AccountButton from '@/components/AccountButton'
 import { getTopicLabel, TOPICS, UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
 import type { Article, DisplayLanguage, Module, Region } from '@/lib/types'
 import coreJournals from '@/config/core-journals.json'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey)
-const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAnonKey as string) : null
+const hasSupabaseEnv = Boolean(supabase)
 
 const PAGE_SIZE = 8
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
@@ -133,14 +130,15 @@ export default function HomePage() {
   const [showFavorites, setShowFavorites] = useState(false)
   const [favoriteArticles, setFavoriteArticles] = useState<Article[]>([])
   const [favoritesLoading, setFavoritesLoading] = useState(false)
+  const [favoritesError, setFavoritesError] = useState(false)
+  const [favoritesAttempt, setFavoritesAttempt] = useState(0)
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false)
   const [topicsOpen, setTopicsOpen] = useState(false)
   const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
-  const [syncLink, setSyncLink] = useState<string | null>(null)
   const text = UI_TEXT[displayLanguage]
   const sourceDropdownRef = useRef<HTMLDivElement | null>(null)
   const resultsTopRef = useRef<HTMLDivElement | null>(null)
-  const { bookmarks, toggleBookmark, getSyncLink } = useBookmarks(supabase)
+  const { bookmarks, toggleBookmark } = useBookmarks(supabase)
 
   useEffect(() => {
     const savedLanguage = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
@@ -281,29 +279,44 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!showFavorites) return
+    setFavoritesError(false)
     if (!supabase || bookmarks.size === 0) {
       setFavoriteArticles([])
       setFavoritesLoading(false)
       return
     }
-
+    const client = supabase
+    let cancelled = false
     setFavoritesLoading(true)
-    supabase
-      .from('articles')
-      .select('*')
-      .in('id', Array.from(bookmarks))
-      .order('published_at', { ascending: false, nullsFirst: false })
-      .then(({ data, error }) => {
-        if (error) {
-          console.error('Supabase favorites query error:', error)
-          setFavoriteArticles([])
-          setFavoritesLoading(false)
-          return
+    void (async () => {
+      try {
+        // Bound URL length and avoid the API's default row limit.
+        const ids = Array.from(bookmarks)
+        const all: Article[] = []
+        for (let from = 0; from < ids.length; from += 100) {
+          const { data, error } = await client.from('articles').select('*')
+            .in('id', ids.slice(from, from + 100))
+            .order('published_at', { ascending: false, nullsFirst: false })
+          if (cancelled) return
+          if (error) throw error
+          all.push(...(data ?? []))
         }
-        setFavoriteArticles(data ?? [])
-        setFavoritesLoading(false)
-      })
-  }, [showFavorites, bookmarks])
+        all.sort((a, b) => (b.published_at ?? '').localeCompare(a.published_at ?? ''))
+        if (!cancelled) {
+          setFavoriteArticles(all)
+          setPage((current) => Math.min(current, Math.max(1, Math.ceil(all.length / PAGE_SIZE))))
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Supabase favorites query error:', error)
+          setFavoritesError(true)
+        }
+      } finally {
+        if (!cancelled) setFavoritesLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [showFavorites, bookmarks, favoritesAttempt])
 
   useEffect(() => {
     const onClickOutside = (event: MouseEvent) => {
@@ -321,10 +334,6 @@ export default function HomePage() {
       document.removeEventListener('mousedown', onClickOutside)
     }
   }, [sourceDropdownOpen])
-
-  const openBookmarkSync = () => {
-    setSyncLink(getSyncLink())
-  }
 
   const changeDisplayLanguage = (language: DisplayLanguage) => {
     setDisplayLanguage(language)
@@ -400,9 +409,6 @@ export default function HomePage() {
 
   const filtered = useMemo(() => {
     let list = baseList
-    if (showFavorites) {
-      list = list.filter((a) => a.module === module && a.region === region)
-    }
     // 收藏模式下直接展示全部收藏，不按分类/来源/搜索筛选
     if (!showFavorites && activeTopic) list = list.filter((a) => (a.topic_tags ?? []).includes(activeTopic))
     if (!showFavorites && sourceFilter) {
@@ -426,7 +432,7 @@ export default function HomePage() {
       )
     }
     return list
-  }, [baseList, activeTopic, sourceFilter, search, showFavorites, module, region])
+  }, [baseList, activeTopic, sourceFilter, search, showFavorites])
 
   const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
@@ -488,10 +494,10 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
-            <NavIconButton label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
-            <NavIconButton label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} active={!showFavorites} />
+            <NavIconButton caption={text.navResearchName} label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
+            <NavIconButton caption={text.navBrowseName} label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} active={!showFavorites} />
             <NavIconButton
-              label={showFavorites ? text.backToArticles : text.navFavoritesTip(bookmarks.size)}
+              caption={text.favorites} label={showFavorites ? text.backToArticles : text.navFavoritesTip(bookmarks.size)}
               onClick={() => {
                 if (showFavorites) exitFavorites()
                 else enterFavorites()
@@ -501,7 +507,7 @@ export default function HomePage() {
               icon={<BookmarkIcon filled={showFavorites || bookmarks.size > 0} />}
               badge={bookmarks.size}
             />
-            <NavIconButton label={text.navSyncTip} onClick={openBookmarkSync} icon={<SyncIcon />} />
+            <AccountButton language={displayLanguage} />
 
             <div
               className="inline-flex h-9 items-center rounded-md border border-gray-200 bg-gray-50 p-0.5"
@@ -533,14 +539,10 @@ export default function HomePage() {
         </div>
       </nav>
 
-      {syncLink && (
-        <SyncDeviceDialog link={syncLink} language={displayLanguage} onClose={() => setSyncLink(null)} />
-      )}
-
       <div className="mx-auto max-w-6xl px-4 py-4 sm:py-5 lg:px-8 lg:py-6">
         <div className="flex flex-col gap-6 lg:flex-row lg:gap-12">
           {/* 主题目录：手机/平板折叠菜单，大屏左侧竖排 */}
-          <aside className="lg:w-60 lg:flex-shrink-0">
+          {!showFavorites && <aside className="lg:w-60 lg:flex-shrink-0">
             <div className="lg:sticky lg:top-24">
               <p className="mb-3 hidden text-xs font-semibold uppercase tracking-wide text-gray-400 lg:block">
                 {text.topicCategory}
@@ -647,17 +649,17 @@ export default function HomePage() {
               </nav>
               )}
             </div>
-          </aside>
+          </aside>}
 
           {/* 主内容区 */}
           <div className="w-full min-w-0 flex-1">
-            <TabBar
+            {!showFavorites && <TabBar
               module={module}
               region={region}
               language={displayLanguage}
               onModuleChange={(m) => { setModule(m); setPage(1) }}
               onRegionChange={(r) => { setRegion(r); setPage(1) }}
-            />
+            />}
 
             <div
               role="note"
@@ -817,10 +819,15 @@ export default function HomePage() {
             )}
 
             <div id="article-results" ref={resultsTopRef} className="mt-4 scroll-mt-20 space-y-3 sm:scroll-mt-24">
-              {loading || scopedLoading ? (
+              {!showFavorites && (loading || scopedLoading) ? (
                 <div className="text-center py-16 text-gray-400 text-sm">{text.loading}</div>
               ) : showFavorites && favoritesLoading ? (
                 <div className="text-center py-16 text-gray-400 text-sm">{text.loadingFavorites}</div>
+              ) : showFavorites && favoritesError ? (
+                <div role="alert" className="py-16 text-center text-sm text-gray-600">
+                  <p>{text.favoritesFailed}</p>
+                  <button type="button" onClick={() => setFavoritesAttempt((attempt) => attempt + 1)} className="mt-3 rounded border border-gray-300 px-4 py-2 hover:bg-gray-100 focus-visible:ring-2">{text.retryFavorites}</button>
+                </div>
               ) : paginated.length === 0 ? (
                 <div className="text-center py-16 text-gray-400 text-sm">
                   {showFavorites

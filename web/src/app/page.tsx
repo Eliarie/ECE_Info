@@ -3,17 +3,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
-import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from '@/components/NavIconButton'
-import SyncDeviceDialog from '@/components/SyncDeviceDialog'
+import { browserClient as supabase } from '@/lib/browserClient'
+import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon } from '@/components/NavIconButton'
+import AccountButton from '@/components/AccountButton'
 import { UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
 import type { Article, DigestHighlight, DisplayLanguage, WeeklyDigest } from '@/lib/types'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const hasSupabaseEnv = Boolean(supabaseUrl && supabaseAnonKey)
-const supabase = hasSupabaseEnv ? createClient(supabaseUrl as string, supabaseAnonKey as string) : null
+const hasSupabaseEnv = Boolean(supabase)
 const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 
 type LinkableArticle = Pick<Article, 'id' | 'source_url'>
@@ -131,8 +128,7 @@ export default function HomePage() {
   const weekRequestRef = useRef(0)
   const [loading, setLoading] = useState(true)
   const text = UI_TEXT[displayLanguage]
-  const { bookmarks, toggleBookmark, getSyncLink } = useBookmarks(supabase)
-  const [syncLink, setSyncLink] = useState<string | null>(null)
+  const { bookmarks, toggleBookmark } = useBookmarks(supabase)
 
   const [overviewCollapsed, setOverviewCollapsed] = useState(false)
 
@@ -341,15 +337,15 @@ export default function HomePage() {
           </div>
 
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
-            <NavIconButton label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
-            <NavIconButton label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
+            <NavIconButton caption={text.navResearchName} label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
+            <NavIconButton caption={text.navBrowseName} label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
             <NavIconButton
-              label={text.navFavoritesTip(bookmarks.size)}
+              caption={text.favorites} label={text.navFavoritesTip(bookmarks.size)}
               href="/browse/?favorites=1"
               icon={<BookmarkIcon filled={bookmarks.size > 0} />}
               badge={bookmarks.size}
             />
-            <NavIconButton label={text.navSyncTip} onClick={() => setSyncLink(getSyncLink())} icon={<SyncIcon />} tooltipAlign="right" />
+            <AccountButton language={displayLanguage} />
 
             <div
               className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5"
@@ -380,10 +376,6 @@ export default function HomePage() {
           </div>
         </div>
       </nav>
-
-      {syncLink && (
-        <SyncDeviceDialog link={syncLink} language={displayLanguage} onClose={() => setSyncLink(null)} />
-      )}
 
       <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12 lg:max-w-6xl lg:px-8 lg:py-10">
         {loading ? (

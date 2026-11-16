@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { createClient } from '@supabase/supabase-js'
+import { browserClient as supabase } from '@/lib/browserClient'
 import {
   normalizeTopic,
   RESEARCH_REF_PATTERN,
@@ -15,13 +15,10 @@ import {
 import { MAX_RESEARCH_TOPICS, useResearchTopics, type ResearchEntry } from '@/lib/useResearchTopics'
 import { useBookmarks } from '@/lib/useBookmarks'
 import { UI_TEXT } from '@/lib/i18n'
-import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon, SyncIcon } from '@/components/NavIconButton'
-import SyncDeviceDialog from '@/components/SyncDeviceDialog'
+import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon } from '@/components/NavIconButton'
+import AccountButton from '@/components/AccountButton'
 import InterestDigestArchive from '@/components/InterestDigestArchive'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null
 // GitHub Pages 备用站是静态导出，没有 /api，只能看已保存的专题
 const isStaticSite = Boolean(process.env.NEXT_PUBLIC_BASE_PATH)
 
@@ -189,8 +186,7 @@ function PaperCard({
 
 export default function ResearchPage() {
   const { entries, loaded, saveTopic, removeTopic } = useResearchTopics(supabase)
-  const { bookmarks, getSyncLink } = useBookmarks(supabase)
-  const [syncLink, setSyncLink] = useState<string | null>(null)
+  const { bookmarks } = useBookmarks(supabase)
   const [input, setInput] = useState('')
   const [current, setCurrent] = useState<ResearchTopicData | null>(null)
   const currentRef = useRef<ResearchTopicData | null>(null)
@@ -455,25 +451,18 @@ export default function ResearchPage() {
             </h1>
           </div>
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
-            <NavIconButton label={text.navResearchTip} href="/research" icon={<ResearchIcon />} active />
-            <NavIconButton label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
+            <NavIconButton caption={text.navResearchName} label={text.navResearchTip} href="/research" icon={<ResearchIcon />} active />
+            <NavIconButton caption={text.navBrowseName} label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
             <NavIconButton
-              label={text.navFavoritesTip(bookmarks.size)}
+              caption={text.favorites} label={text.navFavoritesTip(bookmarks.size)}
               href="/browse/?favorites=1"
               icon={<BookmarkIcon filled={bookmarks.size > 0} />}
               badge={bookmarks.size}
             />
-            <NavIconButton
-              label={text.navSyncTip}
-              onClick={() => setSyncLink(getSyncLink())}
-              icon={<SyncIcon />}
-              tooltipAlign="right"
-            />
+            <AccountButton language="zh" />
           </div>
         </div>
       </nav>
-
-      {syncLink && <SyncDeviceDialog link={syncLink} language="zh" onClose={() => setSyncLink(null)} />}
 
       <main className="mx-auto max-w-2xl px-4 py-6 sm:py-10 lg:max-w-6xl lg:px-8">
         <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">

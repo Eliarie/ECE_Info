@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import AccountProvider from '@/components/AccountProvider'
 
 export const metadata: Metadata = {
   title: '学前教育前沿',
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-CN">
-      <body className="bg-white text-gray-900 antialiased">{children}</body>
+      <body className="bg-white text-gray-900 antialiased"><AccountProvider>{children}</AccountProvider></body>
     </html>
   )
 }

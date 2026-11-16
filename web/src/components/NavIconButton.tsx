@@ -3,10 +3,11 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-// 顶栏的图标按钮：只放图标，鼠标悬停（或键盘聚焦）时在下方显示说明文字
+// Familiar symbols plus short visible names; tooltips explain each destination.
 interface Props {
   label: string // 悬停说明，同时作为读屏文字
   icon: ReactNode
+  caption?: string
   href?: string
   onClick?: () => void
   active?: boolean // 当前所在页面 / 已打开的模式
@@ -15,8 +16,8 @@ interface Props {
   tooltipAlign?: 'center' | 'right'
 }
 
-export default function NavIconButton({ label, icon, href, onClick, active, pressed, badge, tooltipAlign = 'center' }: Props) {
-  const className = `relative flex h-9 w-9 items-center justify-center rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+export default function NavIconButton({ label, icon, caption, href, onClick, active, pressed, badge, tooltipAlign = 'center' }: Props) {
+  const className = `relative flex h-12 w-9 flex-col items-center justify-center gap-1 rounded-lg border transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
     active
       ? 'border-blue-200 bg-blue-50 text-blue-700'
       : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900'
@@ -24,6 +25,7 @@ export default function NavIconButton({ label, icon, href, onClick, active, pres
   const content = (
     <>
       {icon}
+      {caption && <span aria-hidden="true" className="text-[10px] font-medium leading-none">{caption}</span>}
       {badge ? (
         <span className="absolute -right-1.5 -top-1.5 min-w-[18px] rounded-full bg-gray-900 px-1 text-center text-[10px] font-medium leading-[18px] text-white">
           {badge > 99 ? '99+' : badge}
@@ -68,16 +70,15 @@ const iconProps = {
 
 export const ResearchIcon = () => (
   <svg {...iconProps}>
-    <circle cx="11" cy="11" r="7" />
-    <path d="m20 20-3.5-3.5" />
-    <path d="M8.5 11h5M11 8.5v5" />
+    <circle cx="10.5" cy="10.5" r="6.5" />
+    <path d="m16 16 5 5" />
   </svg>
 )
 
 export const BrowseIcon = () => (
   <svg {...iconProps}>
-    <path d="M8 6h13M8 12h13M8 18h13" />
-    <path d="M3 6h.01M3 12h.01M3 18h.01" />
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6M8 12h8M8 16h8" />
   </svg>
 )
 
@@ -87,10 +88,9 @@ export const BookmarkIcon = ({ filled = false }: { filled?: boolean }) => (
   </svg>
 )
 
-export const SyncIcon = () => (
+export const AccountIcon = () => (
   <svg {...iconProps}>
-    <rect x="2" y="4" width="13" height="10" rx="1.5" />
-    <path d="M6 18h5" />
-    <rect x="16" y="8" width="6" height="12" rx="1.5" />
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
   </svg>
 )
