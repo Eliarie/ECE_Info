@@ -447,6 +447,9 @@ export default function HomePage() {
   }
 
   const enterFavorites = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('favorites', '1')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
     setShowFavorites(true)
     setTopicsOpen(false)
     setActiveTopic(null)
@@ -457,6 +460,9 @@ export default function HomePage() {
   }
 
   const exitFavorites = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.delete('favorites')
+    window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
     setShowFavorites(false)
     setPage(1)
   }
@@ -495,7 +501,7 @@ export default function HomePage() {
 
           <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
             <NavIconButton caption={text.navResearchName} label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
-            <NavIconButton caption={text.navBrowseName} label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} active={!showFavorites} />
+            <NavIconButton caption={text.navBrowseName} label={text.navBrowseTip} onClick={exitFavorites} icon={<BrowseIcon />} active={!showFavorites} />
             <NavIconButton
               caption={text.favorites} label={showFavorites ? text.backToArticles : text.navFavoritesTip(bookmarks.size)}
               onClick={() => {

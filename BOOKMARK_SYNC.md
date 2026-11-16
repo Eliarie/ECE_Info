@@ -30,3 +30,5 @@ Supabase Auth 的 Site URL 已改为 `https://ecepaper.siyan.me`，允许回跳�
 - `node --test web/tests/account-storage.test.cjs`：本地账号切换、待补传、旧缓存、失败重试的数据保留。
 - `cd web && npm run build`：生产构建及类型检查。
 - 2026-11-16 使用隔离测试账号和独立浏览器上下文验证真实云端同步、取消收藏、旧云端专题和存档接入、账号隔离。浏览器验证脚本及截图在 `/tmp/ece-account-check/`，不入库。
+
+正式站 `ecepaper.siyan.me` 已在 2026-11-16 以相同隔离场景复测通过；源码提交 `16cf2ea`。另验证了普通文章请求未结束时收藏仍可加载，以及收藏请求失败后的重试。临时测试账号、数据及凭据已清理。
