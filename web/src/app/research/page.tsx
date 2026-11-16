@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import Link from 'next/link'
 import { browserClient as supabase } from '@/lib/browserClient'
 import {
   normalizeTopic,
@@ -14,16 +13,11 @@ import {
 } from '@/lib/research'
 import { MAX_RESEARCH_TOPICS, useResearchTopics, type ResearchEntry } from '@/lib/useResearchTopics'
 import { useBookmarks } from '@/lib/useBookmarks'
-import { UI_TEXT } from '@/lib/i18n'
-import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon } from '@/components/NavIconButton'
-import AccountButton from '@/components/AccountButton'
+import SiteHeader from '@/components/SiteHeader'
 import InterestDigestArchive from '@/components/InterestDigestArchive'
 
 // GitHub Pages 备用站是静态导出，没有 /api，只能看已保存的专题
 const isStaticSite = Boolean(process.env.NEXT_PUBLIC_BASE_PATH)
-
-// 专题研究页只有中文界面，导航沿用站点的中文文案
-const text = UI_TEXT.zh
 
 const SCREEN_BATCH = 15
 const SCREEN_CONCURRENCY = 4
@@ -138,7 +132,7 @@ function PaperCard({
   return (
     <article
       id={paperAnchor(paper.key)}
-      className={`scroll-mt-20 rounded-xl border bg-white p-4 transition-shadow ${
+      className={`scroll-mt-40 rounded-xl border bg-white p-4 transition-shadow ${
         highlighted ? 'border-blue-400 ring-2 ring-blue-200' : 'border-gray-200'
       }`}
     >
@@ -442,33 +436,13 @@ export default function ResearchPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur" aria-label={text.mainNavigation}>
-        <div className="mx-auto flex min-h-14 max-w-6xl items-center gap-3 px-4 py-2 sm:min-h-16 lg:px-8">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold tracking-tight text-gray-900 sm:text-lg">
-              <Link href="/" title={text.navHomeTip}>{text.brand}</Link>
-              <span className="ml-2 font-normal text-gray-400">/ 专题研究</span>
-            </h1>
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
-            <NavIconButton caption={text.navResearchName} label={text.navResearchTip} href="/research" icon={<ResearchIcon />} active />
-            <NavIconButton caption={text.navBrowseName} label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
-            <NavIconButton
-              caption={text.favorites} label={text.navFavoritesTip(bookmarks.size)}
-              href="/browse/?favorites=1"
-              icon={<BookmarkIcon filled={bookmarks.size > 0} />}
-              badge={bookmarks.size}
-            />
-            <AccountButton language="zh" />
-          </div>
-        </div>
-      </nav>
+      <SiteHeader active="research" bookmarkCount={bookmarks.size} />
 
       <main className="mx-auto max-w-2xl px-4 py-6 sm:py-10 lg:max-w-6xl lg:px-8">
         <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
           {/* 大屏左栏：我的专题，随时切换 */}
           <aside className="hidden lg:block">
-            <div className="sticky top-24 max-h-[calc(100vh-7rem)] overflow-y-auto pb-6 pr-1">
+            <div className="sticky top-40 max-h-[calc(100vh-11rem)] overflow-y-auto pb-6 pr-1">
               {!isStaticSite && (
                 <button
                   type="button"

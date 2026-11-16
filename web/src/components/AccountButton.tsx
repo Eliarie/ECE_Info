@@ -5,7 +5,6 @@ import type { FormEvent } from 'react'
 import type { DisplayLanguage } from '@/lib/types'
 import { browserClient } from '@/lib/browserClient'
 import { useAccount } from './AccountProvider'
-import NavIconButton, { AccountIcon } from './NavIconButton'
 
 type Mode = 'login' | 'signup' | 'reset' | 'update'
 const COPY = {
@@ -41,7 +40,7 @@ const COPY = {
   },
 }
 
-export default function AccountButton({ language }: { language: DisplayLanguage }) {
+export default function AccountButton({ language, embedded = false, recoveryOnly = false }: { language: DisplayLanguage; embedded?: boolean; recoveryOnly?: boolean }) {
   const text = COPY[language]
   const { user, recovery, finishRecovery } = useAccount()
   const [open, setOpen] = useState(false)
@@ -54,7 +53,7 @@ export default function AccountButton({ language }: { language: DisplayLanguage 
   const [error, setError] = useState('')
   const dialog = useRef<HTMLDialogElement>(null)
 
-  useEffect(() => { if (recovery) { setMode('update'); setOpen(true) } }, [recovery])
+  useEffect(() => { if (recovery && !embedded) { setMode('update'); setOpen(true) } }, [recovery, embedded])
   useEffect(() => {
     if (open && !dialog.current?.open) dialog.current?.showModal()
     if (!open) dialog.current?.close()
@@ -116,17 +115,12 @@ export default function AccountButton({ language }: { language: DisplayLanguage 
     finally { setBusy(false) }
   }
 
-  return <>
-    <NavIconButton caption={user ? (language === 'zh' ? '账号' : 'Account') : text.login} label={user ? `${text.account} · ${user.email ?? text.loggedIn}` : text.login}
-      onClick={() => { setMode(recovery ? 'update' : 'login'); setOpen(true) }} active={Boolean(user)} icon={<AccountIcon />} tooltipAlign="right" />
-    <dialog ref={dialog} aria-labelledby="account-title" onCancel={(event) => { event.preventDefault(); close() }}
-      onClick={(event) => { if (event.target === event.currentTarget) close() }}
-      className="m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-xl bg-white p-0 text-gray-900 shadow-xl backdrop:bg-black/30">
-      <div className="p-5">
+  const content = (
+      <div className={embedded ? 'account-content' : 'p-5'}>
         <div className="flex items-start justify-between gap-4">
-          <h2 id="account-title" className="text-base font-semibold">{user && mode !== 'update' ? text.account : text[mode]}</h2>
-          <button type="button" disabled={busy} onClick={close} aria-label={text.close}
-            className="rounded px-2 text-xl text-gray-500 hover:bg-gray-100 focus-visible:ring-2 disabled:opacity-50">×</button>
+          <h2 id={embedded ? 'account-section-title' : 'account-title'} className="text-base font-semibold">{user && mode !== 'update' ? text.account : text[mode]}</h2>
+          {!embedded && <button type="button" disabled={busy} onClick={close} aria-label={text.close}
+            className="rounded px-2 text-xl text-gray-500 hover:bg-gray-100 focus-visible:ring-2 disabled:opacity-50">×</button>}
         </div>
         <p className="mt-2 text-sm leading-relaxed text-gray-600">{text.intro}</p>
         {user && mode !== 'update' ? <>
@@ -155,6 +149,14 @@ export default function AccountButton({ language }: { language: DisplayLanguage 
         {error && <p role="alert" className="mt-4 text-sm text-red-700">{error}</p>}
         {message && <p role="status" className="mt-4 text-sm leading-relaxed text-green-800">{message}</p>}
       </div>
+  )
+  if (embedded) return content
+  return <>
+    {!recoveryOnly && <button type="button" className="profile-trigger" onClick={() => { setMode('login'); setOpen(true) }}>{text.account}</button>}
+    <dialog ref={dialog} aria-labelledby="account-title" onCancel={(event) => { event.preventDefault(); close() }}
+      onClick={(event) => { if (event.target === event.currentTarget) close() }}
+      className="m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-md overflow-y-auto rounded-xl bg-white p-0 text-gray-900 shadow-xl backdrop:bg-black/30">
+      {open && content}
     </dialog>
   </>
 }

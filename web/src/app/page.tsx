@@ -4,14 +4,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { browserClient as supabase } from '@/lib/browserClient'
-import NavIconButton, { BookmarkIcon, BrowseIcon, ResearchIcon } from '@/components/NavIconButton'
-import AccountButton from '@/components/AccountButton'
+import SiteHeader from '@/components/SiteHeader'
+import LandingPreference from '@/components/LandingPreference'
+import { useSitePreferences } from '@/components/SitePreferences'
 import { UI_TEXT } from '@/lib/i18n'
 import { useBookmarks } from '@/lib/useBookmarks'
 import type { Article, DigestHighlight, DisplayLanguage, WeeklyDigest } from '@/lib/types'
 
 const hasSupabaseEnv = Boolean(supabase)
-const DISPLAY_LANGUAGE_KEY = 'article_display_language'
 
 type LinkableArticle = Pick<Article, 'id' | 'source_url'>
 
@@ -115,7 +115,11 @@ const byPosition = (list: (LinkableArticle | undefined)[]) => (ref: string) =>
 type HighlightWithArticle = DigestHighlight & { article?: Article }
 
 export default function HomePage() {
-  const [displayLanguage, setDisplayLanguage] = useState<DisplayLanguage>('zh')
+  return <LandingPreference><WeeklyPage /></LandingPreference>
+}
+
+function WeeklyPage() {
+  const { language: displayLanguage } = useSitePreferences()
   // latestDigest：最新一期；digest / articles：页面上正在看的那一期
   const [latestDigest, setLatestDigest] = useState<WeeklyDigest | null>(null)
   const [digest, setDigest] = useState<WeeklyDigest | null>(null)
@@ -131,11 +135,6 @@ export default function HomePage() {
   const { bookmarks, toggleBookmark } = useBookmarks(supabase)
 
   const [overviewCollapsed, setOverviewCollapsed] = useState(false)
-
-  useEffect(() => {
-    const saved = localStorage.getItem(DISPLAY_LANGUAGE_KEY)
-    if (saved === 'zh' || saved === 'en') setDisplayLanguage(saved)
-  }, [])
 
   useEffect(() => {
     document.documentElement.lang = displayLanguage === 'zh' ? 'zh-CN' : 'en'
@@ -203,11 +202,6 @@ export default function HomePage() {
     setDigest(row)
     setArticles(list)
   }, [])
-
-  const changeDisplayLanguage = (language: DisplayLanguage) => {
-    setDisplayLanguage(language)
-    try { localStorage.setItem(DISPLAY_LANGUAGE_KEY, language) } catch {}
-  }
 
   const viewingLatest = !digest || !latestDigest || digest.week_start === latestDigest.week_start
 
@@ -324,58 +318,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <nav
-        className="sticky top-0 z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur"
-        aria-label={text.mainNavigation}
-      >
-        <div className="mx-auto flex min-h-14 max-w-6xl items-center gap-3 px-4 py-2 sm:min-h-16 lg:px-8">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold tracking-tight text-gray-900 sm:text-lg">
-              <Link href="/">{text.brand}</Link>
-            </h1>
-            <p className="mt-0.5 hidden truncate text-xs text-gray-500 sm:block">{text.subtitle}</p>
-          </div>
-
-          <div className="flex flex-shrink-0 items-center gap-1.5 sm:gap-2">
-            <NavIconButton caption={text.navResearchName} label={text.navResearchTip} href="/research" icon={<ResearchIcon />} />
-            <NavIconButton caption={text.navBrowseName} label={text.navBrowseTip} href="/browse" icon={<BrowseIcon />} />
-            <NavIconButton
-              caption={text.favorites} label={text.navFavoritesTip(bookmarks.size)}
-              href="/browse/?favorites=1"
-              icon={<BookmarkIcon filled={bookmarks.size > 0} />}
-              badge={bookmarks.size}
-            />
-            <AccountButton language={displayLanguage} />
-
-            <div
-              className="inline-flex h-9 items-center rounded-lg border border-gray-200 bg-gray-50 p-0.5"
-              role="group"
-              aria-label={text.interfaceLanguage}
-            >
-              {([
-                ['zh', '中文', '中'],
-                ['en', 'English', '英'],
-              ] as const).map(([value, label, shortLabel]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => changeDisplayLanguage(value)}
-                  aria-pressed={displayLanguage === value}
-                  aria-label={text.useLanguage(label)}
-                  title={label}
-                  className={`h-8 w-8 rounded-md text-xs font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                    displayLanguage === value
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-800'
-                  }`}
-                >
-                  {shortLabel}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </nav>
+      <SiteHeader active="weekly" bookmarkCount={bookmarks.size} />
 
       <main className="mx-auto max-w-2xl px-4 py-8 sm:py-12 lg:max-w-6xl lg:px-8 lg:py-10">
         {loading ? (
@@ -400,7 +343,7 @@ export default function HomePage() {
             <div className="lg:grid lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-12">
               {/* 大屏左栏：期数、本期目录，滚动时固定 */}
               <aside className="hidden lg:block">
-                <div className="sticky top-24 max-h-[calc(100vh-7rem)] space-y-8 overflow-y-auto pb-6 pr-1">
+                <div className="sticky top-40 max-h-[calc(100vh-11rem)] space-y-8 overflow-y-auto pb-6 pr-1">
                   <div>
                     <p className="mb-2 text-xs font-semibold uppercase tracking-widest text-gray-400">{text.digestPeriodLabel}</p>
                     {periodControls}
@@ -533,7 +476,7 @@ export default function HomePage() {
                               key={h.article_id}
                               id={paperAnchorId(h.article_id)}
                               tabIndex={-1}
-                              className={`scroll-mt-24 rounded-xl border p-5 transition-all duration-500 focus:outline-none ${
+                              className={`scroll-mt-40 rounded-xl border p-5 transition-all duration-500 focus:outline-none ${
                                 flashId === h.article_id
                                   ? 'border-blue-400 bg-blue-50/60 shadow-md ring-2 ring-blue-200'
                                   : 'border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm'
